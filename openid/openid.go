@@ -3,7 +3,7 @@
 
 // Package openid provides a generic OIDC SSO provider for Mattermost.
 // It implements the einterfaces.OAuthProvider interface and can be used
-// with any OIDC-compliant identity provider (Keycloak, Auth0, GitLab, Azure AD, Google).
+// with any OIDC-compliant identity provider (Keycloak, Auth0, GitLab, Entra ID, Google).
 //
 // To use this provider, add a blank import in your main.go:
 //

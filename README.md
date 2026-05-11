@@ -1,6 +1,6 @@
 # OIDC SSO Provider for Mattermost
 
-A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant IdP should work; we have only verified it against Entra ID (Azure AD).
+A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant IdP should work; we have only verified it against Entra ID.
 
 ## Features
 
@@ -11,8 +11,11 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 
 ## Compatibility
 
-- Mattermost v10.11.10 (the version the current patch targets)
+- Mattermost v11.0.7 (the version the current patch targets)
+- Mattermost v10.11.10 also supported via [`patches/mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch)
 - Go 1.24.6+
+
+> **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
 ## Quick Start
 
@@ -36,13 +39,13 @@ go build ./...
 There is no Mattermost fork — the integration is a `git apply` against an upstream checkout. Clone it as a sibling of this repository:
 
 ```bash
-git clone --depth 1 --branch v10.11.10 https://github.com/mattermost/mattermost.git ../mattermost
+git clone --depth 1 --branch v11.0.7 https://github.com/mattermost/mattermost.git ../mattermost
 ```
 
 Apply the OIDC patch. It adds the `go.mod` `require`/`replace`, the `main.go` blank import, removes the email-user guard in `user.go`, and opens the OpenID frontend props without a license check:
 
 ```bash
-cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v10.11.10.patch
+cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v11.0.7.patch
 ```
 
 (Optional) For an AGPL-only build, remove the enterprise directory and strip its import:
@@ -135,7 +138,7 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for the Docker build.
 
 ## Identity Provider Setup
 
-Entra ID (Azure AD) is what we use:
+Entra ID is what we use:
 
 1. Register a new application in Entra ID.
 2. Set the redirect URI to `https://your-mattermost.com/signup/openid/complete`.

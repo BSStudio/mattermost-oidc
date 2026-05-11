@@ -8,7 +8,7 @@ Build Mattermost locally with the OIDC module. There is no Mattermost fork — t
 
 ```bash
 # Clone upstream Mattermost at the version the patch targets
-git clone --depth 1 --branch v10.11.10 https://github.com/mattermost/mattermost.git
+git clone --depth 1 --branch v11.0.7 https://github.com/mattermost/mattermost.git
 
 # Clone the OIDC module as a sibling (not inside)
 git clone https://github.com/toowoxx/mattermost-oidc.git
@@ -16,7 +16,7 @@ git clone https://github.com/toowoxx/mattermost-oidc.git
 # Apply the OIDC patch (go.mod require/replace, main.go import,
 # user.go email-migration change, and client.go license-gate bypass)
 cd mattermost
-git apply ../mattermost-oidc/patches/mattermost-v10.11.10.patch
+git apply ../mattermost-oidc/patches/mattermost-v11.0.7.patch
 
 # (Optional) AGPL-only build: remove enterprise and strip its import
 rm -rf server/enterprise
