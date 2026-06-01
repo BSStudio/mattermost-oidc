@@ -24,13 +24,16 @@ sed -i '/Enterprise Imports/d; /github.com\/mattermost\/mattermost\/server\/v8\/
     server/cmd/mattermost/main.go
 
 # Set up a go.work at the common parent so the server resolves
-# mattermost-oidc locally (Mattermost doesn't publish server/v8 via the proxy)
+# mattermost-oidc locally (Mattermost doesn't publish server/v8 via the proxy).
+# server/public must be included too: the server references in-tree public
+# symbols newer than the tagged release, so omitting it breaks the build.
 cd ..
 cat > go.work <<'EOF'
 go 1.24.6
 
 use (
     ./mattermost/server
+    ./mattermost/server/public
     ./mattermost-oidc
 )
 EOF
