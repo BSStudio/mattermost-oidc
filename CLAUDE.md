@@ -34,7 +34,10 @@ The `openid/` module code is almost always **interface-stable** — the
 
 The four hunks are logically stable, but line context drifts every release.
 Past examples: `c request.CTX` was renamed to `rctx request.CTX`; upstream
-removed the `ledongthuc/pdf` replace block, shifting the `go.mod` hunk.
+removed the `ledongthuc/pdf` replace block, shifting the `go.mod` hunk; v11.2
+added a `vmihailenco/msgpack` replace **after** the `tablewriter` replace our
+go.mod hunk anchored on, so the hunk's trailing context was no longer EOF —
+the fix is to append the OIDC `require`/`replace` at the true end of go.mod.
 
 Fast path against a sibling upstream checkout (`../mattermost` at the target tag):
 
