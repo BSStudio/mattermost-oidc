@@ -4,18 +4,20 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 
 ## Features
 
-- OIDC Discovery: authorization, token, and userinfo endpoints resolved from `.well-known/openid-configuration`
+- OIDC Discovery: authorization, token, and UserInfo endpoints resolved from `.well-known/openid-configuration`
 - Account linking: existing Mattermost accounts with a matching email are linked to OIDC on first login
 - Attribute sync on each login (via Mattermost's OAuth flow)
 - Delivered as a Go module plus a small patch against upstream Mattermost — no fork
 
 ## Compatibility
 
-- Mattermost v11.8.1 (the version the current patch targets)
-- Mattermost v11.2.4 also supported via [`patches/mattermost-v11.2.4.patch`](patches/mattermost-v11.2.4.patch) (Go 1.24.6)
-- Mattermost v11.1.3 also supported via [`patches/mattermost-v11.1.3.patch`](patches/mattermost-v11.1.3.patch)
-- Mattermost v11.0.7 also supported via [`patches/mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)
-- Mattermost v10.11.10 also supported via [`patches/mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch)
+| Mattermost | Patch                                                              | Go     |
+| ---------- | ------------------------------------------------------------------ | ------ |
+| v11.8.1    | [`mattermost-v11.8.1.patch`](patches/mattermost-v11.8.1.patch)     | 1.26.3 |
+| v11.2.4    | [`mattermost-v11.2.4.patch`](patches/mattermost-v11.2.4.patch)     | 1.24.6 |
+| v11.1.3    | [`mattermost-v11.1.3.patch`](patches/mattermost-v11.1.3.patch)     | 1.24.6 |
+| v11.0.7    | [`mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)     | 1.24.6 |
+| v10.11.10  | [`mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch) | 1.24.6 |
 
 > **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
@@ -116,18 +118,18 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for the Docker build.
 
 ## Configuration Reference
 
-| Setting                | Type   | Default                  | Description                                                                                                                                                                                                        |
-| ---------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Enable`               | bool   | `false`                  | Enable OIDC authentication                                                                                                                                                                                         |
-| `Id`                   | string | `""`                     | OAuth client ID                                                                                                                                                                                                    |
-| `Secret`               | string | `""`                     | OAuth client secret                                                                                                                                                                                                |
-| `DiscoveryEndpoint`    | string | `""`                     | OIDC discovery URL. When set, `AuthEndpoint`/`TokenEndpoint`/`UserAPIEndpoint` are resolved from it.                                                                                                               |
-| `AuthEndpoint`         | string | `""`                     | Authorization endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                     |
-| `TokenEndpoint`        | string | `""`                     | Token endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                             |
-| `UserAPIEndpoint`      | string | `""`                     | UserInfo endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                          |
-| `Scope`                | string | `"openid email profile"` | OAuth scopes to request                                                                                                                                                                                            |
-| `ButtonText`           | string | `"OpenID Connect"`       | Login button text                                                                                                                                                                                                  |
-| `ButtonColor`          | string | `"#145DBF"`              | Login button color                                                                                                                                                                                                 |
+| Setting                | Type   | Default                  | Description                                                                                                                                                      |
+| ---------------------- | ------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enable`               | bool   | `false`                  | Enable OIDC authentication                                                                                                                                       |
+| `Id`                   | string | `""`                     | OAuth client ID                                                                                                                                                  |
+| `Secret`               | string | `""`                     | OAuth client secret                                                                                                                                              |
+| `DiscoveryEndpoint`    | string | `""`                     | OIDC discovery URL. When set, `AuthEndpoint`/`TokenEndpoint`/`UserAPIEndpoint` are resolved from it.                                                             |
+| `AuthEndpoint`         | string | `""`                     | Authorization endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                   |
+| `TokenEndpoint`        | string | `""`                     | Token endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                           |
+| `UserAPIEndpoint`      | string | `""`                     | UserInfo endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                        |
+| `Scope`                | string | `"openid email profile"` | OAuth scopes to request                                                                                                                                          |
+| `ButtonText`           | string | `"OpenID Connect"`       | Login button text                                                                                                                                                |
+| `ButtonColor`          | string | `"#145DBF"`              | Login button color                                                                                                                                               |
 | `UsePreferredUsername` | bool   | `false`                  | When `true`, the username is taken from the `preferred_username` claim (local part before `@`). When `false` (default), it is derived from the email local part. |
 
 ## OIDC Claims Mapping
@@ -159,7 +161,7 @@ With the patch applied, `IsSameUser` allows an existing Mattermost user (any non
 
 **Verified cases:** GitLab → OIDC and password/email auth → OIDC.
 
-Other source services (google, office365, saml, ldap) are handled symmetrically in code (`openid/openid.go`), but we have not exercised those paths in production.
+Other source auth services (`google`, `office365`, `saml`, `ldap`) are handled symmetrically in code (`openid/openid.go`), but we have not exercised those paths in production.
 
 To disable linking, revert the `server/channels/app/user.go` hunk in the patch. The `main.go`, `client.go`, and `go.mod` hunks are required regardless.
 

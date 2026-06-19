@@ -47,7 +47,7 @@ GOPRIVATE='github.com/mattermost/*' make build-linux-amd64
 
 ## Option 2: Docker Build
 
-The `Dockerfile` at the root of this repository does the same thing inside a container: clones upstream at the version in `MM_VERSION`, applies the patch, strips the enterprise directory, and builds a team-edition binary on Alpine.
+The `Dockerfile` at the root of this repository does the same thing inside a container: clones upstream at the version in `MM_VERSION`, applies the patch, strips the enterprise directory, and builds a Team Edition binary on Alpine.
 
 ```bash
 docker build --build-arg MM_VERSION=11.8.1 -t your-registry/mattermost-oidc:11.8.1 .
