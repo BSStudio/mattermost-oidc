@@ -1,8 +1,8 @@
-ARG MM_VERSION=11.2.4
+ARG MM_VERSION=11.8.1
 ARG MM_CLONE_URL=https://github.com/mattermost/mattermost.git
 
 # Build stage - compile Mattermost server with OIDC support
-FROM golang:1.24.6-alpine AS server-builder
+FROM golang:1.26.3-alpine AS server-builder
 
 RUN apk add --no-cache git gcc musl-dev
 
@@ -17,15 +17,16 @@ COPY . mattermost-oidc/
 
 RUN rm -rf /build/mattermost/server/enterprise \
     && cd /build/mattermost \
-    && git apply /build/mattermost-oidc/patches/mattermost-v11.2.4.patch \
+    && git apply /build/mattermost-oidc/patches/mattermost-v11.8.1.patch \
     && sed -i '/Enterprise Imports/d; /github.com\/mattermost\/mattermost\/server\/v8\/enterprise/d' \
     server/cmd/mattermost/main.go
 
 RUN cat > /build/go.work <<'GOWORK'
-go 1.24.6
+go 1.26.3
 
 use (
     ./mattermost/server
+    ./mattermost/server/public
     ./mattermost-oidc
 )
 GOWORK
@@ -36,6 +37,10 @@ ENV GOPRIVATE=github.com/mattermost/* \
     GONOPROXY=github.com/mattermost/*
 RUN go build -ldflags "-X github.com/mattermost/mattermost/server/public/model.BuildNumber=${MM_VERSION}" \
     -o bin/mattermost ./cmd/mattermost
+
+# Generate the default config.json. Upstream no longer commits config/config.json;
+# it is produced from model defaults at release time via this generator.
+RUN OUTPUT_CONFIG=/build/mattermost/server/config/config.json go run ./scripts/config_generator
 
 # Runtime stage
 FROM alpine:3.18
@@ -49,7 +54,7 @@ RUN apk add --no-cache ca-certificates tzdata \
     && adduser -S -G mattermost -h /mattermost mattermost
 
 COPY --from=server-builder /build/mattermost/server/bin/mattermost /mattermost/bin/mattermost
-COPY --from=server-builder /build/mattermost/config/config.json /mattermost/config/config.json
+COPY --from=server-builder /build/mattermost/server/config/config.json /mattermost/config/config.json
 COPY --from=server-builder /build/mattermost/server/i18n /mattermost/i18n
 COPY --from=server-builder /build/mattermost/server/templates /mattermost/templates
 COPY --from=server-builder /build/mattermost/server/fonts /mattermost/fonts

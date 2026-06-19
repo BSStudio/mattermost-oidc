@@ -66,18 +66,18 @@ func (c *OIDCClaims) Validate() error {
 
 // ToUser converts OIDC claims to a Mattermost user model.
 // The returned user is suitable for use with the OAuth flow.
-func (c *OIDCClaims) ToUser(logger mlog.LoggerIFace) *model.User {
+func (c *OIDCClaims) ToUser(logger mlog.LoggerIFace, settings *model.SSOSettings) *model.User {
 	user := &model.User{}
 
-	// Username: prefer preferred_username, fallback to email local part
-	username := c.PreferredUsername
-	if username == "" {
-		// Extract local part from email (before @)
-		if atIdx := strings.Index(c.Email, "@"); atIdx > 0 {
-			username = c.Email[:atIdx]
-		} else {
-			username = c.Email
-		}
+	// Username: preferred_username when UsePreferredUsername is enabled,
+	// otherwise the email local part.
+	var username string
+	if settings != nil && model.SafeDereference(settings.UsePreferredUsername) && c.PreferredUsername != "" {
+		username = strings.Split(c.PreferredUsername, "@")[0]
+	} else if atIdx := strings.Index(c.Email, "@"); atIdx > 0 {
+		username = c.Email[:atIdx]
+	} else {
+		username = c.Email
 	}
 	user.Username = model.CleanUsername(logger, username)
 

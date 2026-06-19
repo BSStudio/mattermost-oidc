@@ -11,11 +11,11 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 
 ## Compatibility
 
-- Mattermost v11.2.4 (the version the current patch targets)
+- Mattermost v11.8.1 (the version the current patch targets)
+- Mattermost v11.2.4 also supported via [`patches/mattermost-v11.2.4.patch`](patches/mattermost-v11.2.4.patch) (Go 1.24.6)
 - Mattermost v11.1.3 also supported via [`patches/mattermost-v11.1.3.patch`](patches/mattermost-v11.1.3.patch)
 - Mattermost v11.0.7 also supported via [`patches/mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)
 - Mattermost v10.11.10 also supported via [`patches/mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch)
-- Go 1.24.6+
 
 > **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
@@ -31,7 +31,7 @@ git clone https://github.com/toowoxx/mattermost-oidc.git
 
 ```bash
 cd mattermost-oidc
-nix develop  # Sets up Go 1.24 and GOPRIVATE automatically
+nix develop  # Sets up Go 1.26 and GOPRIVATE automatically
 go test ./...
 go build ./...
 ```
@@ -41,13 +41,13 @@ go build ./...
 There is no Mattermost fork — the integration is a `git apply` against an upstream checkout. Clone it as a sibling of this repository:
 
 ```bash
-git clone --depth 1 --branch v11.2.4 https://github.com/mattermost/mattermost.git ../mattermost
+git clone --depth 1 --branch v11.8.1 https://github.com/mattermost/mattermost.git ../mattermost
 ```
 
 Apply the OIDC patch. It adds the `go.mod` `require`/`replace`, the `main.go` blank import, removes the email-user guard in `user.go`, and opens the OpenID frontend props without a license check:
 
 ```bash
-cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v11.2.4.patch
+cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v11.8.1.patch
 ```
 
 (Optional) For an AGPL-only build, remove the enterprise directory and strip its import:
@@ -63,7 +63,7 @@ Create a `go.work` in the common parent so the server resolves `mattermost-oidc`
 ```bash
 cd ..
 cat > go.work <<'EOF'
-go 1.24.6
+go 1.26.3
 
 use (
     ./mattermost/server
@@ -116,30 +116,31 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for the Docker build.
 
 ## Configuration Reference
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `Enable` | bool | `false` | Enable OIDC authentication |
-| `Id` | string | `""` | OAuth client ID |
-| `Secret` | string | `""` | OAuth client secret |
-| `DiscoveryEndpoint` | string | `""` | OIDC discovery URL. When set, `AuthEndpoint`/`TokenEndpoint`/`UserAPIEndpoint` are resolved from it. |
-| `AuthEndpoint` | string | `""` | Authorization endpoint (ignored if `DiscoveryEndpoint` is set) |
-| `TokenEndpoint` | string | `""` | Token endpoint (ignored if `DiscoveryEndpoint` is set) |
-| `UserAPIEndpoint` | string | `""` | UserInfo endpoint (ignored if `DiscoveryEndpoint` is set) |
-| `Scope` | string | `"openid email profile"` | OAuth scopes to request |
-| `ButtonText` | string | `"OpenID Connect"` | Login button text |
-| `ButtonColor` | string | `"#145DBF"` | Login button color |
+| Setting                | Type   | Default                  | Description                                                                                                                                                                                                        |
+| ---------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Enable`               | bool   | `false`                  | Enable OIDC authentication                                                                                                                                                                                         |
+| `Id`                   | string | `""`                     | OAuth client ID                                                                                                                                                                                                    |
+| `Secret`               | string | `""`                     | OAuth client secret                                                                                                                                                                                                |
+| `DiscoveryEndpoint`    | string | `""`                     | OIDC discovery URL. When set, `AuthEndpoint`/`TokenEndpoint`/`UserAPIEndpoint` are resolved from it.                                                                                                               |
+| `AuthEndpoint`         | string | `""`                     | Authorization endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                     |
+| `TokenEndpoint`        | string | `""`                     | Token endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                             |
+| `UserAPIEndpoint`      | string | `""`                     | UserInfo endpoint (ignored if `DiscoveryEndpoint` is set)                                                                                                                                                          |
+| `Scope`                | string | `"openid email profile"` | OAuth scopes to request                                                                                                                                                                                            |
+| `ButtonText`           | string | `"OpenID Connect"`       | Login button text                                                                                                                                                                                                  |
+| `ButtonColor`          | string | `"#145DBF"`              | Login button color                                                                                                                                                                                                 |
+| `UsePreferredUsername` | bool   | `false`                  | When `true`, the username is taken from the `preferred_username` claim (local part before `@`). When `false` (default), it is derived from the email local part. |
 
 ## OIDC Claims Mapping
 
-| OIDC Claim | Mattermost Field | Notes |
-|------------|------------------|-------|
-| `sub` | `AuthData` | Unique user identifier (required) |
-| `email` | `Email` | Required, lowercased |
-| `email_verified` | `EmailVerified` | Passed through from the IdP |
-| `preferred_username` | `Username` | Sanitized via `CleanUsername`; falls back to the local part of `email` |
-| `given_name` | `FirstName` | |
-| `family_name` | `LastName` | |
-| `name` | `FirstName` + `LastName` | Used when `given_name`/`family_name` are absent; split on the first space |
+| OIDC Claim           | Mattermost Field         | Notes                                                                                                                                                             |
+| -------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sub`                | `AuthData`               | Unique user identifier (required)                                                                                                                                 |
+| `email`              | `Email`                  | Required, lowercased                                                                                                                                              |
+| `email_verified`     | `EmailVerified`          | Passed through from the IdP                                                                                                                                       |
+| `preferred_username` | `Username`               | Used **only** when `UsePreferredUsername` is `true` (split on the first `@`); otherwise the username is the local part of `email`. Sanitized via `CleanUsername`. |
+| `given_name`         | `FirstName`              |                                                                                                                                                                   |
+| `family_name`        | `LastName`               |                                                                                                                                                                   |
+| `name`               | `FirstName` + `LastName` | Used when `given_name`/`family_name` are absent; split on the first space                                                                                         |
 
 ## Identity Provider Setup
 
