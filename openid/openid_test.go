@@ -119,9 +119,13 @@ func TestOIDCClaims_Validate(t *testing.T) {
 func TestOIDCClaims_ToUser(t *testing.T) {
 	logger := &mockLogger{}
 
+	usePreferred := &model.SSOSettings{UsePreferredUsername: new(true)}
+	noPreferred := &model.SSOSettings{UsePreferredUsername: new(false)}
+
 	tests := []struct {
 		name              string
 		claims            OIDCClaims
+		settings          *model.SSOSettings
 		wantUsername      string
 		wantFirstName     string
 		wantLastName      string
@@ -130,7 +134,7 @@ func TestOIDCClaims_ToUser(t *testing.T) {
 		wantEmailVerified bool
 	}{
 		{
-			name: "all fields present with verified email",
+			name: "preferred_username used when UsePreferredUsername=true",
 			claims: OIDCClaims{
 				Sub:               "user-123",
 				Email:             "Test@Example.com",
@@ -139,6 +143,7 @@ func TestOIDCClaims_ToUser(t *testing.T) {
 				GivenName:         "Test",
 				FamilyName:        "User",
 			},
+			settings:          usePreferred,
 			wantUsername:      "testuser",
 			wantFirstName:     "Test",
 			wantLastName:      "User",
@@ -147,11 +152,57 @@ func TestOIDCClaims_ToUser(t *testing.T) {
 			wantEmailVerified: true,
 		},
 		{
-			name: "username from email, unverified",
+			name: "preferred_username ignored when UsePreferredUsername=false (default)",
 			claims: OIDCClaims{
-				Sub:   "user-456",
-				Email: "john.doe@example.com",
+				Sub:               "user-123",
+				Email:             "Test@Example.com",
+				EmailVerified:     true,
+				PreferredUsername: "testuser",
+				GivenName:         "Test",
+				FamilyName:        "User",
 			},
+			settings:          noPreferred,
+			wantUsername:      "test", // email local part, not preferred_username
+			wantFirstName:     "Test",
+			wantLastName:      "User",
+			wantEmail:         "test@example.com",
+			wantAuthData:      "user-123",
+			wantEmailVerified: true,
+		},
+		{
+			name: "nil settings behaves like UsePreferredUsername=false",
+			claims: OIDCClaims{
+				Sub:               "user-123",
+				Email:             "person@example.com",
+				PreferredUsername: "ignored",
+			},
+			settings:          nil,
+			wantUsername:      "person", // email local part
+			wantEmail:         "person@example.com",
+			wantAuthData:      "user-123",
+			wantEmailVerified: false,
+		},
+		{
+			name: "preferred_username split on @ when enabled",
+			claims: OIDCClaims{
+				Sub:               "user-007",
+				Email:             "bond@example.com",
+				PreferredUsername: "jbond@corp.example.com",
+			},
+			settings:          usePreferred,
+			wantUsername:      "jbond", // local part of the preferred_username
+			wantEmail:         "bond@example.com",
+			wantAuthData:      "user-007",
+			wantEmailVerified: false,
+		},
+		{
+			name: "falls back to email when preferred_username empty and flag on",
+			claims: OIDCClaims{
+				Sub:               "user-456",
+				Email:             "john.doe@example.com",
+				PreferredUsername: "",
+			},
+			settings:          usePreferred,
 			wantUsername:      "john.doe",
 			wantFirstName:     "",
 			wantLastName:      "",
@@ -193,7 +244,7 @@ func TestOIDCClaims_ToUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user := tt.claims.ToUser(logger)
+			user := tt.claims.ToUser(logger, tt.settings)
 
 			if user.Username != tt.wantUsername {
 				t.Errorf("Username = %s, want %s", user.Username, tt.wantUsername)
@@ -338,7 +389,7 @@ func TestOpenIDProvider_GetUserFromJSON(t *testing.T) {
 	}`
 
 	// Create a mock context
-	user, err := provider.GetUserFromJSON(nil, bytes.NewReader([]byte(jsonData)), nil)
+	user, err := provider.GetUserFromJSON(nil, bytes.NewReader([]byte(jsonData)), nil, nil)
 	if err != nil {
 		t.Fatalf("GetUserFromJSON failed: %v", err)
 	}
@@ -355,7 +406,7 @@ func TestOpenIDProvider_GetUserFromJSON(t *testing.T) {
 func TestOpenIDProvider_GetUserFromJSON_InvalidJSON(t *testing.T) {
 	provider := &OpenIDProvider{}
 
-	_, err := provider.GetUserFromJSON(nil, strings.NewReader("invalid json"), nil)
+	_, err := provider.GetUserFromJSON(nil, strings.NewReader("invalid json"), nil, nil)
 	if err == nil {
 		t.Error("Expected error for invalid JSON")
 	}
@@ -367,14 +418,14 @@ func TestOpenIDProvider_GetUserFromJSON_MissingClaims(t *testing.T) {
 
 	// Missing sub
 	jsonData := `{"email": "test@example.com"}`
-	_, err := provider.GetUserFromJSON(nil, strings.NewReader(jsonData), nil)
+	_, err := provider.GetUserFromJSON(nil, strings.NewReader(jsonData), nil, nil)
 	if err == nil {
 		t.Error("Expected error for missing sub claim")
 	}
 
 	// Missing email
 	jsonData = `{"sub": "user-123"}`
-	_, err = provider.GetUserFromJSON(nil, strings.NewReader(jsonData), nil)
+	_, err = provider.GetUserFromJSON(nil, strings.NewReader(jsonData), nil, nil)
 	if err == nil {
 		t.Error("Expected error for missing email claim")
 	}

@@ -34,7 +34,7 @@ func init() {
 
 // GetUserFromJSON parses the UserInfo response from the OIDC provider.
 // This is called after the OAuth token exchange when fetching user info.
-func (p *OpenIDProvider) GetUserFromJSON(rctx request.CTX, data io.Reader, tokenUser *model.User) (*model.User, error) {
+func (p *OpenIDProvider) GetUserFromJSON(rctx request.CTX, data io.Reader, tokenUser *model.User, settings *model.SSOSettings) (*model.User, error) {
 	claims, err := ParseOIDCClaims(data)
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (p *OpenIDProvider) GetUserFromJSON(rctx request.CTX, data io.Reader, token
 	if rctx != nil {
 		logger = rctx.Logger()
 	}
-	return claims.ToUser(logger), nil
+	return claims.ToUser(logger, settings), nil
 }
 
 // GetSSOSettings returns the OpenID settings from the Mattermost config.

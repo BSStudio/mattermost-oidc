@@ -30,6 +30,22 @@ The `openid/` module code is almost always **interface-stable** — the
 `server/einterfaces/oauthproviders.go` in the target version; only touch
 `openid/` if that interface changed.
 
+**It did change at v11.6** ([mattermost/mattermost#30852](https://github.com/mattermost/mattermost/pull/30852)).
+`GetUserFromJSON` gained a fourth argument:
+`GetUserFromJSON(rctx request.CTX, data io.Reader, tokenUser *model.User, settings *model.SSOSettings)`.
+Core resolves the provider's `SSOSettings` (via `GetSSOSettings`) and passes them
+in, and `SSOSettings` gained `UsePreferredUsername *bool` (defaults to `false`).
+This is **not** a decorative argument — the built-in providers (gitlab, Entra)
+read `settings.UsePreferredUsername` to decide the username source, and so does
+`openid/claims.go` `ToUser`: flag on ⇒ `preferred_username` (split on `@`); flag
+off (default) ⇒ email local part. If you port to a pre-v11.6 line, the signature
+must drop that argument again and `ToUser` reverts to a single arg; the
+per-version patches and the module build are not interchangeable across this
+boundary. Always diff `oauthproviders.go` **and** the gitlab provider between the
+old and new tag before regenerating — interface drift here silently breaks the
+build, and behavioral drift (a new settings flag) silently changes account
+provisioning.
+
 ### Step 1 — regenerate the patch (it WILL fail to apply cleanly)
 
 The four hunks are logically stable, but line context drifts every release.
@@ -94,6 +110,18 @@ cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build
 - **Downstream builds pin this repo by commit, not a branch or tarball.** After
   changing the patch here, push first; a consumer that clones at a pinned commit
   only picks up the change once that pin is bumped.
+- **go.mod pseudo-version timestamps are UTC, not local.** The pin format is
+  `v8.0.0-<YYYYMMDDhhmmss>-<commit12>` where the timestamp is the commit's
+  **UTC** committer date. Deriving it with a local-TZ `git show --date=format:…`
+  produces a value Go rejects at build time (`does not match version-control
+  timestamp (expected …)`). Use `TZ=UTC git show -s --format=%cd
+  --date=format-local:%Y%m%d%H%M%S <commit>`. Both pins (server/v8 require and
+  the server/public replace) must use the same UTC timestamp + commit.
+- **Upstream no longer commits `config/config.json`** (gone by v11.8). It is
+  generated from `model.Config` defaults at release time via
+  `go run ./scripts/config_generator` (`OUTPUT_CONFIG=…/config.json`). The
+  Dockerfile generates it in the build stage; don't `COPY` a non-existent
+  `config/config.json`.
 - **`GetUserFromIdToken` intentionally returns `(nil, nil)`** to force the
   authenticated UserInfo path — core passes the raw ID token unvalidated. Don't
   "implement" it without JWKS/iss/aud verification.

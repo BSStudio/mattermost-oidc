@@ -15,7 +15,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             # Go toolchain
-            go_1_24
+            go_1_26
             gopls
             golangci-lint
             delve
@@ -54,7 +54,7 @@
             # Hint about go.work for local development
             if [ -d "../mattermost/server" ] && [ ! -f "go.work" ]; then
               echo "Tip: Create go.work to use local mattermost checkout:"
-              echo "  echo -e 'go 1.24.6\n\nuse (\n    .\n    ../mattermost/server\n)' > go.work"
+              echo "  echo -e 'go 1.26.3\n\nuse (\n    .\n    ../mattermost/server\n    ../mattermost/server/public\n)' > go.work"
               echo ""
             fi
           '';
