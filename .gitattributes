@@ -1,0 +1,6 @@
+# Enforce LF line endings in the index and on checkout, on every platform.
+# This repo saw recurring CRLF churn from Windows-side checkouts; keep it LF-only.
+* text=auto eol=lf
+
+# Patches must stay byte-for-byte LF so `git apply` matches the upstream tree.
+*.patch text eol=lf

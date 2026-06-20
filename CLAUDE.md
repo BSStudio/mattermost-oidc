@@ -93,7 +93,25 @@ use (
 )
 ```
 
-### Step 3 — build
+### Step 3 — bump go.mod to mirror upstream, then tidy
+
+On every version update, repoint the module and refresh its deps — don't leave
+them lagging. Mirror upstream exactly; do **not** pick a newer or older Go than
+the target tag ships.
+
+1. **Go version: match upstream.** Set the `go` directive in this repo's
+   `go.mod`, in the `go.work`, and the Dockerfile base image to the exact `go`
+   directive in the target tag's `server/go.mod` (and `server/public/go.mod` —
+   they agree). Don't run ahead of upstream's Go.
+2. **Repoint both pins** to the target commit — `server/v8` (require) and
+   `server/public` (replace), same commit and same **UTC** pseudo-version
+   timestamp (see the timestamp gotcha below).
+3. **Tidy inside the go.work:** `go mod tidy` to refresh `go.sum` and realign the
+   indirect block to the target's module graph.
+4. **Validate standalone** — this catches `go.sum` gaps the workspace build hides:
+   `GOWORK=off GOPRIVATE='github.com/mattermost/*' go build ./... && go test ./...`.
+
+### Step 4 — build
 
 `server/v8` is not on the module proxy, so set `GOPRIVATE=github.com/mattermost/*`.
 
@@ -103,10 +121,12 @@ cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build
 
 ## Gotchas worth not relearning
 
-- **`openid/go.mod` pins a stale pseudo-version** (e.g. an old v10.11 commit).
-  Don't bump it and don't panic about the mismatch — the real build resolves
-  `server/v8` and `server/public` via go.work/`replace`, which override the pin
-  entirely. It only matters for `go test ./...` inside this repo standalone.
+- **`go.mod`'s module pins only matter standalone.** The Docker/workspace build
+  resolves `server/v8` and `server/public` from the `go.work`/`replace`,
+  overriding the pins entirely — so a pin that lags HEAD won't break that build,
+  and you needn't chase it mid-development. It _does_ matter for standalone
+  `go test ./...` / `go build ./...` and downstream consumers, so repoint it and
+  `go mod tidy` as part of every version port (Step 3).
 - **Downstream builds pin this repo by commit, not a branch or tarball.** After
   changing the patch here, push first; a consumer that clones at a pinned commit
   only picks up the change once that pin is bumped.
