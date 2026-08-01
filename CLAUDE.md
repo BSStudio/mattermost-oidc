@@ -62,6 +62,18 @@ Fast path against a sibling upstream checkout (`../mattermost` at the target tag
 cd ../mattermost && git apply -3 --check ../mattermost-oidc/patches/mattermost-v<OLD>.patch
 ```
 
+**Clone upstream with LF endings.** Mattermost ships no `.gitattributes`, so on
+Windows a global `core.autocrlf=true` checks it out CRLF and the LF patch fails
+on *every* hunk — including files the target tag never touched:
+
+```bash
+git clone -c core.autocrlf=false --depth 1 --branch <NEW-tag> \
+  https://github.com/mattermost/mattermost.git ../mattermost
+```
+
+A hunk failing on a file with a genuinely empty `git diff <OLD-tag> <NEW-tag>`
+is the tell that this, not real drift, is the problem.
+
 If it conflicts, re-apply the four changes by hand against the new tag, then:
 
 ```bash
@@ -105,7 +117,22 @@ the target tag ships.
    they agree). Don't run ahead of upstream's Go.
 2. **Repoint both pins** to the target commit — `server/v8` (require) and
    `server/public` (replace), same commit and same **UTC** pseudo-version
-   timestamp (see the timestamp gotcha below).
+   timestamp (see the timestamp gotcha below). Don't hand-write the version —
+   let Go derive it, because the `server/public` pseudo-version's *base* moves
+   as upstream cuts `server/public/vX.Y.Z` tags (it was `v0.4.1-0.…` at v11.8.1
+   and `v0.4.3-0.…` at v11.9.0):
+
+   ```bash
+   go mod edit -dropreplace github.com/mattermost/mattermost/server/public
+   GOFLAGS=-mod=mod GOWORK=off GOPRIVATE='github.com/mattermost/*' \
+     go get github.com/mattermost/mattermost/server/v8@<commit> \
+            github.com/mattermost/mattermost/server/public@<commit>
+   ```
+
+   Then re-add the `replace` with the pseudo-version `go get` resolved. The
+   `replace` is load-bearing, not decorative: a released `server/public` tag
+   sorts *above* a pseudo-version derived from it, so without it MVS can pull a
+   tagged `public` that doesn't match the pinned `server/v8` commit.
 3. **Tidy inside the go.work:** `go mod tidy` to refresh `go.sum` and realign the
    indirect block to the target's module graph.
 4. **Validate standalone** — this catches `go.sum` gaps the workspace build hides:
@@ -154,3 +181,8 @@ cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build
   prose — current Microsoft branding.
 - Only claim compatibility with versions actually built and tested; note
   untested IdPs/paths as such rather than implying coverage.
+- **Keep commit messages short.** A subject line is usually the whole message.
+  Don't narrate what the diff already shows, and don't explain routine work
+  (version bumps, regenerated patches, doc edits). Add a body only for a
+  decision the diff can't convey — a non-obvious "why", or a constraint that
+  forced the approach — and keep it to a couple of lines.

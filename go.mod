@@ -1,10 +1,10 @@
 module github.com/toowoxx/mattermost-oidc
 
-go 1.26.3
+go 1.26.4
 
 require (
-	github.com/mattermost/mattermost/server/public v0.4.0
-	github.com/mattermost/mattermost/server/v8 v8.0.0-20260615133520-358e15f91c4a
+	github.com/mattermost/mattermost/server/public v0.4.3-0.20260707065046-583461af10fc
+	github.com/mattermost/mattermost/server/v8 v8.0.0-20260707065046-583461af10fc
 )
 
 require (
@@ -45,11 +45,11 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/wiggin77/merror v1.0.5 // indirect
 	github.com/wiggin77/srslog v1.0.1 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/mod v0.36.0 // indirect
-	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
 	google.golang.org/grpc v1.81.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
@@ -60,4 +60,4 @@ require (
 
 // Both modules must come from the same commit since Mattermost doesn't publish
 // server/v8 versions and their server/public tags lag behind HEAD
-replace github.com/mattermost/mattermost/server/public => github.com/mattermost/mattermost/server/public v0.4.1-0.20260615133520-358e15f91c4a
+replace github.com/mattermost/mattermost/server/public => github.com/mattermost/mattermost/server/public v0.4.3-0.20260707065046-583461af10fc
