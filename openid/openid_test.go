@@ -11,6 +11,7 @@ import (
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
+	"github.com/mattermost/mattermost/server/public/shared/request"
 )
 
 // mockLogger implements mlog.LoggerIFace for testing
@@ -301,20 +302,38 @@ func TestDiscoveryEndpointFromIssuer(t *testing.T) {
 	}
 }
 
+// linkCase drives the IsSameUser table.
+type linkCase struct {
+	name            string
+	env             string
+	requireVerified string
+	dbUser          *model.User
+	oauthUser       *model.User
+	want            bool
+}
+
+// migrating builds an ordinary member mid-migration: an existing account on some
+// other auth service, and the OIDC login arriving for the same address.
+func migrating(authService, roles string) (*model.User, *model.User) {
+	gitlabID := "gitlab-id-789"
+	sub := "user-123"
+	return &model.User{Email: testMember, Roles: roles, AuthService: authService, AuthData: &gitlabID},
+		&model.User{Email: testMember, AuthService: model.ServiceOpenid, AuthData: &sub}
+}
+
+const (
+	testMember      = "user@example.com"
+	testSomeoneElse = "someone.else@example.com"
+)
+
 // Test IsSameUser
 func TestOpenIDProvider_IsSameUser(t *testing.T) {
 	provider := &OpenIDProvider{}
 
 	sub1 := "user-123"
 	sub2 := "user-456"
-	gitlabID := "gitlab-id-789"
 
-	tests := []struct {
-		name      string
-		dbUser    *model.User
-		oauthUser *model.User
-		want      bool
-	}{
+	tests := []linkCase{
 		// Case 1: Same provider, same AuthData
 		{
 			name:      "same OIDC user",
@@ -322,55 +341,371 @@ func TestOpenIDProvider_IsSameUser(t *testing.T) {
 			oauthUser: &model.User{AuthService: model.ServiceOpenid, AuthData: &sub1},
 			want:      true,
 		},
-		// Case 1: Same provider, different AuthData — different person
+		// Case 2: Same provider, different AuthData — different person
 		{
 			name:      "different OIDC user",
 			dbUser:    &model.User{AuthService: model.ServiceOpenid, AuthData: &sub1},
 			oauthUser: &model.User{AuthService: model.ServiceOpenid, AuthData: &sub2},
 			want:      false,
 		},
-		// Case 2: Cross-provider migration from GitLab
-		{
-			name:      "gitlab to OIDC migration",
-			dbUser:    &model.User{Email: "user@example.com", AuthService: "gitlab", AuthData: &gitlabID},
-			oauthUser: &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub1},
-			want:      true,
-		},
-		// Case 2: Cross-provider migration from Google
-		{
-			name:      "google to OIDC migration",
-			dbUser:    &model.User{Email: "user@example.com", AuthService: "google", AuthData: &gitlabID},
-			oauthUser: &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub1},
-			want:      true,
-		},
-		// Case 2: Cross-provider migration from email/password auth
-		{
-			name:      "email auth to OIDC migration",
-			dbUser:    &model.User{Email: "user@example.com", AuthService: "email", AuthData: &gitlabID},
-			oauthUser: &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub1},
-			want:      true,
-		},
-		// Reject: already OIDC with different sub (different person)
+		// Case 2: already OIDC, refused even when the address is listed
 		{
 			name:      "already OIDC different sub",
-			dbUser:    &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub2},
-			oauthUser: &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub1},
+			env:       testMember,
+			dbUser:    &model.User{Email: testMember, AuthService: model.ServiceOpenid, AuthData: &sub2},
+			oauthUser: &model.User{Email: testMember, AuthService: model.ServiceOpenid, AuthData: &sub1},
 			want:      false,
 		},
-		// Case 2: Email/password user migration
+	}
+
+	tests = append(tests, ordinaryMigrationCases()...)
+	tests = append(tests, privilegedMigrationCases()...)
+	tests = append(tests, linkEdgeCases()...)
+	tests = append(tests, verifiedEmailCases()...)
+
+	// Run every case twice: with a nil request context (Mattermost core always
+	// passes one, but the interface permits nil) and with a real one, so the
+	// logging path is exercised too.
+	contexts := map[string]request.CTX{
+		"nil ctx": nil,
+		"ctx":     request.EmptyContext(&mockLogger{}),
+	}
+
+	for _, tt := range tests {
+		for ctxName, rctx := range contexts {
+			t.Run(tt.name+"/"+ctxName, func(t *testing.T) {
+				t.Setenv(LinkPrivilegedAccountsEnvVar, tt.env)
+				t.Setenv(RequireVerifiedEmailEnvVar, tt.requireVerified)
+
+				got := provider.IsSameUser(rctx, tt.dbUser, tt.oauthUser)
+				if got != tt.want {
+					t.Errorf("IsSameUser() = %v, want %v", got, tt.want)
+				}
+			})
+		}
+	}
+}
+
+// ordinaryMigrationCases covers the path the whole user base takes: an
+// unprivileged account on any prior auth service, migrating with no list set.
+func ordinaryMigrationCases() []linkCase {
+	var cases []linkCase
+
+	for _, authService := range []string{"gitlab", "google", "email", "office365", "saml", "ldap", ""} {
+		name := authService
+		if name == "" {
+			name = "password (empty AuthService)"
+		}
+		dbUser, oauthUser := migrating(authService, model.SystemUserRoleId)
+		cases = append(cases, linkCase{
+			name:      name + " to OIDC migration",
+			dbUser:    dbUser,
+			oauthUser: oauthUser,
+			want:      true,
+		})
+	}
+
+	// Roles that carry no authority beyond the account itself.
+	for _, roles := range []string{
+		"",
+		model.SystemUserRoleId,
+		model.SystemGuestRoleId,
+		model.SystemUserRoleId + " " + model.SystemUserAccessTokenRoleId,
+		model.SystemUserRoleId + " " + model.SystemPostAllRoleId,
+		model.SystemUserRoleId + " " + model.SystemPostAllPublicRoleId,
+	} {
+		dbUser, oauthUser := migrating("gitlab", roles)
+		cases = append(cases, linkCase{
+			name:      "benign roles [" + roles + "] migrate freely",
+			dbUser:    dbUser,
+			oauthUser: oauthUser,
+			want:      true,
+		})
+	}
+
+	return cases
+}
+
+// privilegedMigrationCases covers the accounts a takeover would escalate on:
+// refused by default, linkable only while explicitly named. The unknown role is
+// the point of the permit-list — a role from a future Mattermost release must
+// not become linkable the day it ships.
+func privilegedMigrationCases() []linkCase {
+	var cases []linkCase
+
+	for _, roles := range []string{
+		model.SystemUserRoleId + " " + model.SystemAdminRoleId,
+		model.SystemUserRoleId + " " + model.SystemManagerRoleId,
+		model.SystemUserRoleId + " " + model.SystemUserManagerRoleId,
+		model.SystemUserRoleId + " " + model.SystemReadOnlyAdminRoleId,
+		model.SystemUserRoleId + " " + model.SystemCustomGroupAdminRoleId,
+		model.SystemUserRoleId + " " + model.SharedChannelManagerRoleId,
+		model.SystemUserRoleId + " system_role_from_a_future_release",
+	} {
+		unlistedDB, unlistedOAuth := migrating("gitlab", roles)
+		namedDB, namedOAuth := migrating("gitlab", roles)
+		otherDB, otherOAuth := migrating("gitlab", roles)
+
+		cases = append(cases,
+			linkCase{
+				name:      "privileged [" + roles + "] refused when not named",
+				dbUser:    unlistedDB,
+				oauthUser: unlistedOAuth,
+				want:      false,
+			},
+			linkCase{
+				name:      "privileged [" + roles + "] links when named",
+				env:       testSomeoneElse + "," + testMember,
+				dbUser:    namedDB,
+				oauthUser: namedOAuth,
+				want:      true,
+			},
+			linkCase{
+				name:      "privileged [" + roles + "] refused when somebody else is named",
+				env:       testSomeoneElse,
+				dbUser:    otherDB,
+				oauthUser: otherOAuth,
+				want:      false,
+			},
+		)
+	}
+
+	return cases
+}
+
+// linkEdgeCases covers bots, mismatched or empty emails, and list normalization.
+func linkEdgeCases() []linkCase {
+	admin := model.SystemUserRoleId + " " + model.SystemAdminRoleId
+
+	botDB, botOAuth := migrating("gitlab", model.SystemUserRoleId)
+	botDB.IsBot = true
+
+	mismatchDB, mismatchOAuth := migrating("gitlab", model.SystemUserRoleId)
+	mismatchOAuth.Email = testSomeoneElse
+
+	emptyDB, emptyOAuth := migrating("gitlab", model.SystemUserRoleId)
+	emptyDB.Email, emptyOAuth.Email = "", ""
+
+	caseDB, caseOAuth := migrating("gitlab", admin)
+	caseDB.Email = "User@Example.com"
+
+	return []linkCase{
 		{
-			name:      "email auth to OIDC migration (empty AuthService)",
-			dbUser:    &model.User{Email: "user@example.com", AuthService: "", AuthData: nil},
-			oauthUser: &model.User{Email: "user@example.com", AuthService: model.ServiceOpenid, AuthData: &sub1},
+			name:      "named match is case and whitespace insensitive",
+			env:       "  USER@Example.COM , " + testSomeoneElse,
+			dbUser:    caseDB,
+			oauthUser: caseOAuth,
 			want:      true,
 		},
+		// Bots do not sign in through OIDC; a login matching one is not a migration.
+		{
+			name:      "bot account refused even when named",
+			env:       testMember,
+			dbUser:    botDB,
+			oauthUser: botOAuth,
+			want:      false,
+		},
+		// Defensive: core matched on email, but do not take that on trust.
+		{
+			name:      "refused when the emails differ",
+			env:       testMember + "," + testSomeoneElse,
+			dbUser:    mismatchDB,
+			oauthUser: mismatchOAuth,
+			want:      false,
+		},
+		{
+			name:      "refused when the email is empty",
+			env:       ",,",
+			dbUser:    emptyDB,
+			oauthUser: emptyOAuth,
+			want:      false,
+		},
+	}
+}
+
+// verifiedEmailCases covers MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL. The claim is
+// only consulted when the switch is on; when it is on, it applies to named
+// privileged accounts too.
+func verifiedEmailCases() []linkCase {
+	admin := model.SystemUserRoleId + " " + model.SystemAdminRoleId
+
+	build := func(roles string, verified bool) (*model.User, *model.User) {
+		dbUser, oauthUser := migrating("gitlab", roles)
+		oauthUser.EmailVerified = verified
+		return dbUser, oauthUser
+	}
+
+	unverifiedDB, unverifiedOAuth := build(model.SystemUserRoleId, false)
+	verifiedDB, verifiedOAuth := build(model.SystemUserRoleId, true)
+	offDB, offOAuth := build(model.SystemUserRoleId, false)
+	garbageDB, garbageOAuth := build(model.SystemUserRoleId, false)
+	falseDB, falseOAuth := build(model.SystemUserRoleId, false)
+	namedUnverifiedDB, namedUnverifiedOAuth := build(admin, false)
+	namedVerifiedDB, namedVerifiedOAuth := build(admin, true)
+	verifiedButUnnamedDB, verifiedButUnnamedOAuth := build(admin, true)
+
+	return []linkCase{
+		{
+			name:            "required and verified: ordinary account links",
+			requireVerified: "true",
+			dbUser:          verifiedDB,
+			oauthUser:       verifiedOAuth,
+			want:            true,
+		},
+		{
+			name:            "required and unverified: ordinary account refused",
+			requireVerified: "true",
+			dbUser:          unverifiedDB,
+			oauthUser:       unverifiedOAuth,
+			want:            false,
+		},
+		// The steady state today: authentik emits false for everyone, so the
+		// switch stays off and the claim is ignored.
+		{
+			name:      "not required: unverified account still links",
+			dbUser:    offDB,
+			oauthUser: offOAuth,
+			want:      true,
+		},
+		{
+			name:            "explicitly disabled: unverified account still links",
+			requireVerified: "false",
+			dbUser:          falseDB,
+			oauthUser:       falseOAuth,
+			want:            true,
+		},
+		// A value ParseBool cannot read falls back to the default rather than
+		// guessing. It shows up in the decision log either way.
+		{
+			name:            "unparseable value falls back to the default",
+			requireVerified: "yes please",
+			dbUser:          garbageDB,
+			oauthUser:       garbageOAuth,
+			want:            true,
+		},
+		// The bar applies above the privileged branches: being named does not
+		// buy an exemption from it.
+		{
+			name:            "required and unverified: named admin still refused",
+			env:             testMember,
+			requireVerified: "true",
+			dbUser:          namedUnverifiedDB,
+			oauthUser:       namedUnverifiedOAuth,
+			want:            false,
+		},
+		{
+			name:            "required and verified: named admin links",
+			env:             testMember,
+			requireVerified: "true",
+			dbUser:          namedVerifiedDB,
+			oauthUser:       namedVerifiedOAuth,
+			want:            true,
+		},
+		// Verified email is necessary, not sufficient: the role gate still stands.
+		{
+			name:            "required and verified: unnamed admin still refused",
+			requireVerified: "true",
+			dbUser:          verifiedButUnnamedDB,
+			oauthUser:       verifiedButUnnamedOAuth,
+			want:            false,
+		},
+	}
+}
+
+// Test requireVerifiedEmail
+func TestRequireVerifiedEmail(t *testing.T) {
+	tests := []struct {
+		env  string
+		want bool
+	}{
+		{env: "", want: false},
+		{env: "   ", want: false},
+		{env: "false", want: false},
+		{env: "0", want: false},
+		{env: "true", want: true},
+		{env: "TRUE", want: true},
+		{env: "True", want: true},
+		{env: "1", want: true},
+		{env: "  true  ", want: true},
+		// ParseBool does not know these, so they read as the default rather
+		// than as the "on" the author probably meant. Documented, and visible
+		// in the decision log.
+		{env: "yes", want: false},
+		{env: "on", want: false},
+		{env: "enabled", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run("["+tt.env+"]", func(t *testing.T) {
+			t.Setenv(RequireVerifiedEmailEnvVar, tt.env)
+
+			if got := requireVerifiedEmail(); got != tt.want {
+				t.Errorf("requireVerifiedEmail() with %s=%q = %v, want %v",
+					RequireVerifiedEmailEnvVar, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test isPrivileged
+func TestIsPrivileged(t *testing.T) {
+	tests := []struct {
+		roles string
+		want  bool
+	}{
+		{roles: "", want: false},
+		{roles: model.SystemUserRoleId, want: false},
+		{roles: model.SystemGuestRoleId, want: false},
+		{roles: model.SystemUserRoleId + " " + model.SystemPostAllRoleId, want: false},
+		{roles: model.SystemUserRoleId + " " + model.SystemPostAllPublicRoleId, want: false},
+		{roles: model.SystemUserRoleId + " " + model.SystemUserAccessTokenRoleId, want: false},
+		{roles: "  " + model.SystemUserRoleId + "   ", want: false},
+		{roles: model.SystemAdminRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SystemAdminRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SystemManagerRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SystemUserManagerRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SystemReadOnlyAdminRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SystemCustomGroupAdminRoleId, want: true},
+		{roles: model.SystemUserRoleId + " " + model.SharedChannelManagerRoleId, want: true},
+		// Fail closed: a role this build has never heard of counts as privileged.
+		{roles: model.SystemUserRoleId + " system_role_from_a_future_release", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run("["+tt.roles+"]", func(t *testing.T) {
+			if got := isPrivileged(&model.User{Roles: tt.roles}); got != tt.want {
+				t.Errorf("isPrivileged(%q) = %v, want %v", tt.roles, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test IsLinkAllowed
+func TestIsLinkAllowed(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   string
+		email string
+		want  bool
+	}{
+		{name: "unset list", env: "", email: "user@example.com", want: false},
+		{name: "whitespace-only list", env: "  ", email: "user@example.com", want: false},
+		{name: "single entry", env: "user@example.com", email: "user@example.com", want: true},
+		{name: "multiple entries", env: "a@example.com,user@example.com,b@example.com", email: "user@example.com", want: true},
+		{name: "normalized entry", env: " USER@EXAMPLE.COM ", email: "User@Example.com", want: true},
+		{name: "not listed", env: "a@example.com,b@example.com", email: "user@example.com", want: false},
+		{name: "empty email", env: "user@example.com", email: "", want: false},
+		{name: "empty email against empty entries", env: ",,", email: "", want: false},
+		{name: "substring is not a match", env: "someuser@example.com", email: "user@example.com", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := provider.IsSameUser(nil, tt.dbUser, tt.oauthUser)
-			if got != tt.want {
-				t.Errorf("IsSameUser() = %v, want %v", got, tt.want)
+			t.Setenv(LinkPrivilegedAccountsEnvVar, tt.env)
+
+			if got := IsLinkAllowed(tt.email); got != tt.want {
+				t.Errorf("IsLinkAllowed(%q) with %s=%q = %v, want %v",
+					tt.email, LinkPrivilegedAccountsEnvVar, tt.env, got, tt.want)
 			}
 		})
 	}

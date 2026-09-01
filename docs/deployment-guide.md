@@ -55,3 +55,18 @@ docker push your-registry/mattermost-oidc:11.9.0
 ```
 
 The image exposes `8065` and runs `mattermost server` as a non-root user.
+
+## Runtime configuration
+
+`OpenIdSettings` is read from `config.json` or `MM_OPENIDSETTINGS_*` as usual. Two settings are read straight from the server process's environment instead:
+
+```bash
+MM_OIDC_LINK_PRIVILEGED_ACCOUNTS=admin@example.com
+MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL=false
+```
+
+Existing non-OIDC accounts are linked to OIDC on their owner's first OIDC login. That is automatic for ordinary accounts and needs no configuration; accounts holding `system_admin` or another privileged system role are refused unless their address is listed in the first variable, and bot accounts are always refused. Deploy with it empty, set it only for the deploy that migrates an admin, and empty it again afterwards.
+
+The second variable adds a requirement that the IdP assert `email_verified: true` before anything links. Leave it off until your IdP emits a value derived from real mailbox confirmation — authentik and Entra ID do not, as shipped, and turning it on against either refuses every migration.
+
+Both are read per login attempt but from the process environment, so each change means restarting the server (or rolling the pod). See the [Account Linking](../README.md#account-linking) section of the README for the full rules and the log lines to watch for.
