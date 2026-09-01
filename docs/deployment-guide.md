@@ -55,3 +55,15 @@ docker push your-registry/mattermost-oidc:11.9.0
 ```
 
 The image exposes `8065` and runs `mattermost server` as a non-root user.
+
+## Runtime configuration
+
+`OpenIdSettings` is read from `config.json` or `MM_OPENIDSETTINGS_*` as usual. One setting is read straight from the server process's environment instead:
+
+```bash
+MM_OIDC_LINK_PRIVILEGED_ACCOUNTS=admin@example.com
+```
+
+Existing non-OIDC accounts are linked to OIDC on their owner's first OIDC login. That is automatic for ordinary accounts and needs no configuration; accounts holding `system_admin` or another privileged system role are refused unless their address is listed here, and bot accounts are always refused. Deploy with it empty, set it only for the deploy that migrates an admin, and empty it again afterwards — it is read per login attempt but from the process environment, so each change means restarting the server (or rolling the pod).
+
+See the [Account Linking](../README.md#account-linking) section of the README for the full rules and the log lines to watch for.

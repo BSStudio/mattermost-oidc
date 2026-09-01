@@ -20,7 +20,18 @@ The patch makes exactly four logical changes:
 3. `server/config/client.go` — expose the OpenID frontend props
    (`EnableSignUpWithOpenId`, button text/color) without a license check.
 4. `server/channels/app/user.go` — remove the email-user guard so existing
-   accounts link to OIDC on first login (account linking; optional — see README).
+   password accounts can link to OIDC on first login (account linking;
+   optional — see README).
+
+Account linking itself is gated in `openid/openid.go` `linkDecision`: ordinary
+accounts link automatically, accounts holding any system role outside the benign
+permit-list (`benignSystemRoles`) link only while named in
+`MM_OIDC_LINK_PRIVILEGED_ACCOUNTS`, and bots never link. The gate is on roles
+because roles live on the user row and are never recomputed from claims, so a
+mis-linked admin account keeps `system_admin`. When a new Mattermost release
+adds a system role, it is privileged by default — decide deliberately before
+adding it to `benignSystemRoles`. Keep hunk 4 as long as password accounts still
+need migrating.
 
 ## Porting to a new Mattermost version
 

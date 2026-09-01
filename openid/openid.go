@@ -15,6 +15,7 @@ package openid
 import (
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -81,21 +82,68 @@ func (p *OpenIDProvider) GetUserFromIdToken(_ request.CTX, _ string) (*model.Use
 	return nil, nil
 }
 
+// LinkPrivilegedAccountsEnvVar names the environment variable holding the
+// comma-separated email addresses of *privileged* accounts that may still be
+// linked to OIDC. Ordinary accounts link without being named; privileged ones
+// never do unless listed here.
+//
+// It exists because admins have to migrate to OIDC too. Keep it empty except
+// during the deploy that migrates one, and keep that window short: while an
+// address is listed, anyone able to set that address at the IdP can take the
+// account over, roles included.
+const LinkPrivilegedAccountsEnvVar = "MM_OIDC_LINK_PRIVILEGED_ACCOUNTS"
+
+// benignSystemRoles are the system roles that carry no authority beyond the
+// account itself. Every other role counts as privileged.
+//
+// This is a permit-list on purpose: a system role added by a future Mattermost
+// release is treated as privileged until somebody decides otherwise, rather
+// than becoming quietly linkable the day it ships.
+var benignSystemRoles = map[string]struct{}{
+	model.SystemUserRoleId:            {},
+	model.SystemGuestRoleId:           {},
+	model.SystemPostAllRoleId:         {},
+	model.SystemPostAllPublicRoleId:   {},
+	model.SystemUserAccessTokenRoleId: {},
+}
+
+// isPrivileged reports whether the account holds any system role beyond the
+// benign set — system_admin, system_manager, system_user_manager and the rest.
+//
+// Roles live on the user row and are never recomputed from OIDC claims, so a
+// linked account keeps whatever it had. That is what turns a mis-linked login
+// from identity theft into privilege escalation, and it is the reason these
+// accounts are gated separately.
+//
+// Team and channel administration are not covered: those live in TeamMembers
+// and ChannelMembers, which IsSameUser has no store handle to read.
+func isPrivileged(u *model.User) bool {
+	for _, role := range strings.Fields(u.Roles) {
+		if _, ok := benignSystemRoles[role]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
 // IsSameUser compares two users to determine if they represent the same OIDC user.
 //
 // This is called by Mattermost's CreateOAuthUser after it finds an existing user
 // by email. If IsSameUser returns true, the core calls UpdateAuthData to migrate
-// the user to the new provider.
+// that account onto the incoming sub; if it returns false, the login fails with
+// "already attached to another account".
 //
-// Two cases are handled:
-//  1. Same provider: AuthData matches (normal login, same OIDC sub)
-//  2. Cross-provider migration: DB user has a different auth service (e.g. "gitlab")
-//     but the same email. Since Mattermost only calls IsSameUser after an email
-//     match, and the IdP is admin-controlled, we trust the email and allow migration.
+// Three cases are handled:
+//  1. Same provider: AuthData matches (normal login, same OIDC sub).
+//  2. DB user is already on OIDC with a different sub — a different person. Rejected.
+//  3. Cross-provider linking: the DB user is on another auth service (gitlab,
+//     email/password, google, …). This is how an existing user base migrates
+//     onto OIDC, and it trusts the IdP's email claim to identify the account.
 //
-// Users already on OIDC with a different sub are rejected (case 2 excludes them)
-// to prevent account takeover between OIDC users.
-func (p *OpenIDProvider) IsSameUser(_ request.CTX, dbUser, oAuthUser *model.User) bool {
+// Case 3 is gated by linkDecision rather than allowed outright: the email claim
+// is only as trustworthy as the IdP's control over it, so linking is refused for
+// the accounts where a wrong answer costs the most.
+func (p *OpenIDProvider) IsSameUser(rctx request.CTX, dbUser, oAuthUser *model.User) bool {
 	// Case 1: Same AuthData = same user (normal case)
 	if dbUser.AuthData != nil && oAuthUser.AuthData != nil {
 		if *dbUser.AuthData == *oAuthUser.AuthData {
@@ -103,14 +151,91 @@ func (p *OpenIDProvider) IsSameUser(_ request.CTX, dbUser, oAuthUser *model.User
 		}
 	}
 
-	// Case 2: Cross-provider migration.
-	// The DB user is on a different auth service (gitlab, email, google, etc.)
-	// and we're migrating them to OIDC. Allow it — the email already matched.
-	// Reject if the DB user is already on OIDC (different sub = different person).
-	if dbUser.AuthService != model.ServiceOpenid {
-		return true
+	// Case 2: Already OIDC with a different sub = different person.
+	if dbUser.AuthService == model.ServiceOpenid {
+		return false
 	}
 
+	// Case 3: Cross-provider linking.
+	allowed, reason := linkDecision(dbUser, oAuthUser)
+	logLinkDecision(rctx, allowed, reason, dbUser, oAuthUser)
+
+	return allowed
+}
+
+// linkDecision decides whether an existing non-OIDC account may be taken over by
+// an incoming OIDC login, and says why. The reason is for the log line — every
+// outcome here is worth explaining to whoever reads it later.
+func linkDecision(dbUser, oAuthUser *model.User) (bool, string) {
+	email := NormalizeEmail(dbUser.Email)
+
+	switch {
+	// Core reaches IsSameUser only after matching on email, but do not rely on
+	// that: check both sides so this decision holds standalone.
+	case email == "" || email != NormalizeEmail(oAuthUser.Email):
+		return false, "emails do not match"
+
+	// Bots do not sign in through OIDC. A login matching one is not a migration.
+	case dbUser.IsBot:
+		return false, "target is a bot account"
+
+	// The ordinary case: an existing member migrating to OIDC. No list, no
+	// deploy, no ceremony — this is the path the whole user base takes.
+	case !isPrivileged(dbUser):
+		return true, "unprivileged account"
+
+	case IsLinkAllowed(email):
+		return true, "privileged account named in " + LinkPrivilegedAccountsEnvVar
+
+	default:
+		return false, "privileged account not named in " + LinkPrivilegedAccountsEnvVar
+	}
+}
+
+// logLinkDecision records every account-linking decision. A link takes over an
+// existing account and is the single most security-relevant event this provider
+// produces; a refusal is what an attempted takeover looks like.
+func logLinkDecision(rctx request.CTX, allowed bool, reason string, dbUser, oAuthUser *model.User) {
+	if rctx == nil {
+		return
+	}
+
+	sub := ""
+	if oAuthUser.AuthData != nil {
+		sub = *oAuthUser.AuthData
+	}
+
+	fields := []mlog.Field{
+		mlog.String("email", NormalizeEmail(dbUser.Email)),
+		mlog.String("from_auth_service", dbUser.AuthService),
+		mlog.String("sub", sub),
+		mlog.String("user_id", dbUser.Id),
+		mlog.String("roles", dbUser.Roles),
+		mlog.String("reason", reason),
+	}
+
+	if allowed {
+		rctx.Logger().Info("OIDC account linking: linking existing account to OIDC", fields...)
+		return
+	}
+
+	rctx.Logger().Warn("OIDC account linking: refused", fields...)
+}
+
+// IsLinkAllowed reports whether this email is named in
+// LinkPrivilegedAccountsEnvVar. It only decides the privileged case — ordinary
+// accounts link without appearing in the list.
+func IsLinkAllowed(email string) bool {
+	email = NormalizeEmail(email)
+	if email == "" {
+		return false
+	}
+
+	for _, entry := range strings.Split(os.Getenv(LinkPrivilegedAccountsEnvVar), ",") {
+		if NormalizeEmail(entry) == email {
+			return true
+		}
+	}
 	return false
 }
 
