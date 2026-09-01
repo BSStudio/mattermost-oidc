@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -92,6 +93,29 @@ func (p *OpenIDProvider) GetUserFromIdToken(_ request.CTX, _ string) (*model.Use
 // address is listed, anyone able to set that address at the IdP can take the
 // account over, roles included.
 const LinkPrivilegedAccountsEnvVar = "MM_OIDC_LINK_PRIVILEGED_ACCOUNTS"
+
+// RequireVerifiedEmailEnvVar names the environment variable that decides whether
+// account linking also requires the IdP to have verified the address it asserts
+// — the `email_verified` claim.
+//
+// Default false, because many IdPs (authentik among them) emit `false` for every
+// user unless a property mapping says otherwise, and requiring it there refuses
+// every migration. Turn it on once your IdP emits a value driven by real mailbox
+// confirmation; a mapping hardcoded to `true` passes this check for everybody and
+// buys nothing.
+//
+// Parsed with strconv.ParseBool: "true", "1", "false", "0" and friends. Anything
+// else, including empty, reads as the default.
+const RequireVerifiedEmailEnvVar = "MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL"
+
+// requireVerifiedEmail reports whether linking requires `email_verified: true`.
+func requireVerifiedEmail() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(RequireVerifiedEmailEnvVar)))
+	if err != nil {
+		return false
+	}
+	return enabled
+}
 
 // benignSystemRoles are the system roles that carry no authority beyond the
 // account itself. Every other role counts as privileged.
@@ -179,6 +203,13 @@ func linkDecision(dbUser, oAuthUser *model.User) (bool, string) {
 	case dbUser.IsBot:
 		return false, "target is a bot account"
 
+	// The IdP did not vouch for this address, so it cannot be used to identify an
+	// existing account. Deliberately above the privileged cases: a named admin
+	// clears the same bar, and an unverified address is worth knowing about
+	// before an admin account moves.
+	case requireVerifiedEmail() && !oAuthUser.EmailVerified:
+		return false, "email claim is not verified by the IdP"
+
 	// The ordinary case: an existing member migrating to OIDC. No list, no
 	// deploy, no ceremony — this is the path the whole user base takes.
 	case !isPrivileged(dbUser):
@@ -211,6 +242,8 @@ func logLinkDecision(rctx request.CTX, allowed bool, reason string, dbUser, oAut
 		mlog.String("sub", sub),
 		mlog.String("user_id", dbUser.Id),
 		mlog.String("roles", dbUser.Roles),
+		mlog.Bool("email_verified", oAuthUser.EmailVerified),
+		mlog.Bool("require_verified_email", requireVerifiedEmail()),
 		mlog.String("reason", reason),
 	}
 

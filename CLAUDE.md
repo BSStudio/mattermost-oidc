@@ -33,6 +33,14 @@ adds a system role, it is privileged by default — decide deliberately before
 adding it to `benignSystemRoles`. Keep hunk 4 as long as password accounts still
 need migrating.
 
+`MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL` adds an `email_verified` requirement on
+top, off by default because authentik and Entra ID do not emit a meaningful
+value as shipped. It reads `oAuthUser.EmailVerified`, which holds the raw claim
+only because core sets `user.EmailVerified = true` *after* the `userByEmail`
+block that calls `IsSameUser` — re-check that ordering in
+`server/channels/app/user.go` on every version port, since a move above the
+block would make the flag always true and the check a no-op.
+
 ## Porting to a new Mattermost version
 
 The `openid/` module code is almost always **interface-stable** — the

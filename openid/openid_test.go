@@ -304,11 +304,12 @@ func TestDiscoveryEndpointFromIssuer(t *testing.T) {
 
 // linkCase drives the IsSameUser table.
 type linkCase struct {
-	name      string
-	env       string
-	dbUser    *model.User
-	oauthUser *model.User
-	want      bool
+	name            string
+	env             string
+	requireVerified string
+	dbUser          *model.User
+	oauthUser       *model.User
+	want            bool
 }
 
 // migrating builds an ordinary member mid-migration: an existing account on some
@@ -360,6 +361,7 @@ func TestOpenIDProvider_IsSameUser(t *testing.T) {
 	tests = append(tests, ordinaryMigrationCases()...)
 	tests = append(tests, privilegedMigrationCases()...)
 	tests = append(tests, linkEdgeCases()...)
+	tests = append(tests, verifiedEmailCases()...)
 
 	// Run every case twice: with a nil request context (Mattermost core always
 	// passes one, but the interface permits nil) and with a real one, so the
@@ -373,6 +375,7 @@ func TestOpenIDProvider_IsSameUser(t *testing.T) {
 		for ctxName, rctx := range contexts {
 			t.Run(tt.name+"/"+ctxName, func(t *testing.T) {
 				t.Setenv(LinkPrivilegedAccountsEnvVar, tt.env)
+				t.Setenv(RequireVerifiedEmailEnvVar, tt.requireVerified)
 
 				got := provider.IsSameUser(rctx, tt.dbUser, tt.oauthUser)
 				if got != tt.want {
@@ -517,6 +520,130 @@ func linkEdgeCases() []linkCase {
 			oauthUser: emptyOAuth,
 			want:      false,
 		},
+	}
+}
+
+// verifiedEmailCases covers MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL. The claim is
+// only consulted when the switch is on; when it is on, it applies to named
+// privileged accounts too.
+func verifiedEmailCases() []linkCase {
+	admin := model.SystemUserRoleId + " " + model.SystemAdminRoleId
+
+	build := func(roles string, verified bool) (*model.User, *model.User) {
+		dbUser, oauthUser := migrating("gitlab", roles)
+		oauthUser.EmailVerified = verified
+		return dbUser, oauthUser
+	}
+
+	unverifiedDB, unverifiedOAuth := build(model.SystemUserRoleId, false)
+	verifiedDB, verifiedOAuth := build(model.SystemUserRoleId, true)
+	offDB, offOAuth := build(model.SystemUserRoleId, false)
+	garbageDB, garbageOAuth := build(model.SystemUserRoleId, false)
+	falseDB, falseOAuth := build(model.SystemUserRoleId, false)
+	namedUnverifiedDB, namedUnverifiedOAuth := build(admin, false)
+	namedVerifiedDB, namedVerifiedOAuth := build(admin, true)
+	verifiedButUnnamedDB, verifiedButUnnamedOAuth := build(admin, true)
+
+	return []linkCase{
+		{
+			name:            "required and verified: ordinary account links",
+			requireVerified: "true",
+			dbUser:          verifiedDB,
+			oauthUser:       verifiedOAuth,
+			want:            true,
+		},
+		{
+			name:            "required and unverified: ordinary account refused",
+			requireVerified: "true",
+			dbUser:          unverifiedDB,
+			oauthUser:       unverifiedOAuth,
+			want:            false,
+		},
+		// The steady state today: authentik emits false for everyone, so the
+		// switch stays off and the claim is ignored.
+		{
+			name:      "not required: unverified account still links",
+			dbUser:    offDB,
+			oauthUser: offOAuth,
+			want:      true,
+		},
+		{
+			name:            "explicitly disabled: unverified account still links",
+			requireVerified: "false",
+			dbUser:          falseDB,
+			oauthUser:       falseOAuth,
+			want:            true,
+		},
+		// A value ParseBool cannot read falls back to the default rather than
+		// guessing. It shows up in the decision log either way.
+		{
+			name:            "unparseable value falls back to the default",
+			requireVerified: "yes please",
+			dbUser:          garbageDB,
+			oauthUser:       garbageOAuth,
+			want:            true,
+		},
+		// The bar applies above the privileged branches: being named does not
+		// buy an exemption from it.
+		{
+			name:            "required and unverified: named admin still refused",
+			env:             testMember,
+			requireVerified: "true",
+			dbUser:          namedUnverifiedDB,
+			oauthUser:       namedUnverifiedOAuth,
+			want:            false,
+		},
+		{
+			name:            "required and verified: named admin links",
+			env:             testMember,
+			requireVerified: "true",
+			dbUser:          namedVerifiedDB,
+			oauthUser:       namedVerifiedOAuth,
+			want:            true,
+		},
+		// Verified email is necessary, not sufficient: the role gate still stands.
+		{
+			name:            "required and verified: unnamed admin still refused",
+			requireVerified: "true",
+			dbUser:          verifiedButUnnamedDB,
+			oauthUser:       verifiedButUnnamedOAuth,
+			want:            false,
+		},
+	}
+}
+
+// Test requireVerifiedEmail
+func TestRequireVerifiedEmail(t *testing.T) {
+	tests := []struct {
+		env  string
+		want bool
+	}{
+		{env: "", want: false},
+		{env: "   ", want: false},
+		{env: "false", want: false},
+		{env: "0", want: false},
+		{env: "true", want: true},
+		{env: "TRUE", want: true},
+		{env: "True", want: true},
+		{env: "1", want: true},
+		{env: "  true  ", want: true},
+		// ParseBool does not know these, so they read as the default rather
+		// than as the "on" the author probably meant. Documented, and visible
+		// in the decision log.
+		{env: "yes", want: false},
+		{env: "on", want: false},
+		{env: "enabled", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run("["+tt.env+"]", func(t *testing.T) {
+			t.Setenv(RequireVerifiedEmailEnvVar, tt.env)
+
+			if got := requireVerifiedEmail(); got != tt.want {
+				t.Errorf("requireVerifiedEmail() with %s=%q = %v, want %v",
+					RequireVerifiedEmailEnvVar, tt.env, got, tt.want)
+			}
+		})
 	}
 }
 

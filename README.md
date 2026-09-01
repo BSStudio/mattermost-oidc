@@ -135,9 +135,10 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for the Docker build.
 
 One setting lives outside `OpenIdSettings`, in the server's process environment:
 
-| Variable                           | Default | Description                                                                                                                                                                                                                                    |
-| ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MM_OIDC_LINK_PRIVILEGED_ACCOUNTS` | unset   | Comma-separated email addresses of _privileged_ accounts (`system_admin` and friends) that may be linked to OIDC. Ordinary accounts link without being listed; privileged ones never do unless named. See [Account Linking](#account-linking). |
+| Variable                              | Default | Description                                                                                                                                                                                                                                    |
+| ------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MM_OIDC_LINK_PRIVILEGED_ACCOUNTS`    | unset   | Comma-separated email addresses of _privileged_ accounts (`system_admin` and friends) that may be linked to OIDC. Ordinary accounts link without being listed; privileged ones never do unless named. See [Account Linking](#account-linking). |
+| `MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL` | `false` | When `true`, linking additionally requires the IdP to assert `email_verified: true`. Off by default because many IdPs emit `false` for every user. See [Account Linking](#account-linking).                                                    |
 
 ## OIDC Claims Mapping
 
@@ -175,6 +176,8 @@ Linking trusts the IdP's `email` claim to identify the account, so it is refused
 | Bot account                                                                                                                              | Never                                                  |
 | Already on OIDC with a different `sub`                                                                                                   | Never — a different `sub` is a different person        |
 
+Every row above additionally requires the IdP to assert `email_verified: true` when [`MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL`](#requiring-a-verified-email) is on. It is off by default.
+
 The role check is a permit-list, not a blocklist: a system role introduced by a future Mattermost release counts as privileged until somebody decides otherwise, rather than becoming quietly linkable the day it ships.
 
 ### Migrating a privileged account
@@ -189,6 +192,20 @@ Comma-separated, matched case-insensitively, whitespace around entries ignored. 
 
 Every decision is logged with the email, previous auth service, incoming `sub`, roles and the reason: `Info` when an account is linked, `Warn` when one is refused. A refusal is what an attempted takeover looks like, so both are worth alerting on.
 
+### Requiring a verified email
+
+The gate above trusts the `email` claim to identify the account. Set this to make it demand that the IdP actually vouched for the address:
+
+```bash
+MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL=true
+```
+
+With it on, an OIDC login whose `email_verified` claim is not `true` links nothing — ordinary account or named admin alike. It sits above the role check on purpose: being named in `MM_OIDC_LINK_PRIVILEGED_ACCOUNTS` is not an exemption, and an unverified address is worth noticing _before_ an admin account moves. Verified email is necessary, not sufficient: privileged accounts still need naming.
+
+**Off by default**, because it is only meaningful if the claim is. authentik emits `email_verified: false` for every user unless a property mapping says otherwise, and Entra ID's value tracks the tenant rather than the mailbox — turning this on against either as shipped refuses every migration. Turn it on once your IdP derives the claim from real mailbox confirmation. A property mapping hardcoded to `true` satisfies the check for everybody and buys nothing.
+
+Values are parsed with Go's `strconv.ParseBool` — `true`, `1`, `false`, `0` and friends. `yes` and `on` are _not_ recognised and fall back to the default; the effective setting and the claim value both appear in every decision log line, so a typo is visible rather than silent.
+
 ### Why the gate is on roles
 
 Mattermost stores roles on the user row and never recomputes them from claims, so a linked account keeps whatever it had. That is what separates a mis-linked ordinary member (identity theft, recoverable) from a mis-linked admin (privilege escalation). Gating on the target's roles blocks the second outcome permanently while leaving the first to the IdP, which is where email trust actually belongs.
@@ -196,7 +213,7 @@ Mattermost stores roles on the user row and never recomputes them from claims, s
 Two things it does not cover, deliberately:
 
 - **Team and channel administration** ride along regardless. Those live in `TeamMembers`/`ChannelMembers`, which `IsSameUser` has no store handle to read.
-- **`email_verified` is not required.** The module parses the claim, but many IdPs emit `false` for every user by default, so requiring it would refuse every migration. If your IdP emits a truthful value, requiring it in `linkDecision` closes the ordinary-member case too and is a two-line change.
+- **Mailbox ownership**, unless you turn on [`MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL`](#requiring-a-verified-email). Left off by default because most IdPs do not emit a meaningful `email_verified`; with it on, the ordinary-member case closes too and the role gate becomes a second line rather than the only one.
 
 **Verified cases:** GitLab → OIDC and password/email auth → OIDC. Other source auth services (`google`, `office365`, `saml`, `ldap`) are handled symmetrically in code (`openid/openid.go`), but we have not exercised those paths in production.
 
