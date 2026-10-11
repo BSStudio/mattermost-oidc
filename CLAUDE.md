@@ -173,6 +173,12 @@ the target tag ships.
 cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build
 ```
 
+Then build the Docker image (`docs/deployment-guide.md`, Option 2). Before that, move the runtime stage (`FROM alpine:`) to the Alpine release the `golang:*-alpine` build image is on: nothing else bumps it, since this repo deliberately has no Renovate, and the binary links musl dynamically, so a runtime older than the build stage can fail at start.
+
+```bash
+docker run --rm golang:<go-version>-alpine cat /etc/alpine-release
+```
+
 ## Gotchas worth not relearning
 
 - **`go.mod`'s module pins only matter standalone.** The Docker/workspace build
