@@ -17,16 +17,17 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 
 ## Compatibility
 
-| Mattermost | Patch                                                              | Go     |
-| ---------- | ------------------------------------------------------------------ | ------ |
-| v11.11.1   | [`mattermost-v11.11.1.patch`](patches/mattermost-v11.11.1.patch)   | 1.26.7 |
-| v11.10.1   | [`mattermost-v11.10.1.patch`](patches/mattermost-v11.10.1.patch)   | 1.26.7 |
-| v11.9.0    | [`mattermost-v11.9.0.patch`](patches/mattermost-v11.9.0.patch)     | 1.26.4 |
-| v11.8.1    | [`mattermost-v11.8.1.patch`](patches/mattermost-v11.8.1.patch)     | 1.26.3 |
-| v11.2.4    | [`mattermost-v11.2.4.patch`](patches/mattermost-v11.2.4.patch)     | 1.24.6 |
-| v11.1.3    | [`mattermost-v11.1.3.patch`](patches/mattermost-v11.1.3.patch)     | 1.24.6 |
-| v11.0.7    | [`mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)     | 1.24.6 |
-| v10.11.10  | [`mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch) | 1.24.6 |
+| Mattermost | Patch                                                              | Go      |
+| ---------- | ------------------------------------------------------------------ | ------- |
+| v12.0.1    | [`mattermost-v12.0.1.patch`](patches/mattermost-v12.0.1.patch)     | 1.26.10 |
+| v11.11.1   | [`mattermost-v11.11.1.patch`](patches/mattermost-v11.11.1.patch)   | 1.26.7  |
+| v11.10.1   | [`mattermost-v11.10.1.patch`](patches/mattermost-v11.10.1.patch)   | 1.26.7  |
+| v11.9.0    | [`mattermost-v11.9.0.patch`](patches/mattermost-v11.9.0.patch)     | 1.26.4  |
+| v11.8.1    | [`mattermost-v11.8.1.patch`](patches/mattermost-v11.8.1.patch)     | 1.26.3  |
+| v11.2.4    | [`mattermost-v11.2.4.patch`](patches/mattermost-v11.2.4.patch)     | 1.24.6  |
+| v11.1.3    | [`mattermost-v11.1.3.patch`](patches/mattermost-v11.1.3.patch)     | 1.24.6  |
+| v11.0.7    | [`mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)     | 1.24.6  |
+| v10.11.10  | [`mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch) | 1.24.6  |
 
 > **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
@@ -52,13 +53,13 @@ go build ./...
 There is no Mattermost fork — the integration is a `git apply` against an upstream checkout. Clone it as a sibling of this repository:
 
 ```bash
-git clone --depth 1 --branch v11.11.1 https://github.com/mattermost/mattermost.git ../mattermost
+git clone --depth 1 --branch v12.0.1 https://github.com/mattermost/mattermost.git ../mattermost
 ```
 
 Apply the OIDC patch. It adds the `go.mod` `require`/`replace`, the `main.go` blank import, removes the email-user guard in `user.go`, and opens the OpenID frontend props without a license check:
 
 ```bash
-cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v11.11.1.patch
+cd ../mattermost && git apply ../mattermost-oidc/patches/mattermost-v12.0.1.patch
 ```
 
 (Optional) For an AGPL-only build, remove the enterprise directory and strip its import:
@@ -74,7 +75,7 @@ Create a `go.work` in the common parent so the server resolves `mattermost-oidc`
 ```bash
 cd ..
 cat > go.work <<'EOF'
-go 1.26.7
+go 1.26.10
 
 use (
     ./mattermost/server

@@ -1,10 +1,10 @@
 module github.com/toowoxx/mattermost-oidc
 
-go 1.26.7
+go 1.26.10
 
 require (
-	github.com/mattermost/mattermost/server/public v0.4.4
-	github.com/mattermost/mattermost/server/v8 v8.0.0-20260924051158-3acb3a7f684d
+	github.com/mattermost/mattermost/server/public v0.4.5-0.20261022074641-987e57120dca
+	github.com/mattermost/mattermost/server/v8 v8.0.0-20261022074641-987e57120dca
 )
 
 require (
@@ -58,4 +58,4 @@ require (
 
 // Both modules must come from the same commit since Mattermost doesn't publish
 // server/v8 versions and their server/public tags lag behind HEAD
-replace github.com/mattermost/mattermost/server/public => github.com/mattermost/mattermost/server/public v0.4.4-0.20260924051158-3acb3a7f684d
+replace github.com/mattermost/mattermost/server/public => github.com/mattermost/mattermost/server/public v0.4.5-0.20261022074641-987e57120dca
