@@ -108,10 +108,10 @@ github.com/mattermost/ldap v0.0.0-20231116144001-0f480c025956 h1:Y1Tu/swM31pVwwb
 github.com/mattermost/ldap v0.0.0-20231116144001-0f480c025956/go.mod h1:SRl30Lb7/QoYyohYeVBuqYvvmXSZJxZgiV3Zf6VbxjI=
 github.com/mattermost/logr/v2 v2.0.22 h1:npFkXlkAWR9J8payh8ftPcCZvLbHSI125mAM5/r/lP4=
 github.com/mattermost/logr/v2 v2.0.22/go.mod h1:0sUKpO+XNMZApeumaid7PYaUZPBIydfuWZ0dqixXo+s=
-github.com/mattermost/mattermost/server/public v0.4.4-0.20260924051158-3acb3a7f684d h1:oe84JMpUWallkAIl8Cbh4rLzb6kkDh+s0vQkfTNUpEs=
-github.com/mattermost/mattermost/server/public v0.4.4-0.20260924051158-3acb3a7f684d/go.mod h1:YLUcbZBI14AP/TWGtuFD8MvMBgz3twat2qlRE0PZ4q8=
-github.com/mattermost/mattermost/server/v8 v8.0.0-20260924051158-3acb3a7f684d h1:RPOT4BsDy14Ew+nW77nlFfvM6SlCwSXb2sLNhufhMJA=
-github.com/mattermost/mattermost/server/v8 v8.0.0-20260924051158-3acb3a7f684d/go.mod h1:GtMJXEiFuBBo0j5YMEbr+OL27IoQmozosiaHtjbMpHs=
+github.com/mattermost/mattermost/server/public v0.4.5-0.20261022074641-987e57120dca h1:QYMFJcNUCOcq+4UxvFNS+TIzOkQa1tajtRQdijQZgiA=
+github.com/mattermost/mattermost/server/public v0.4.5-0.20261022074641-987e57120dca/go.mod h1:TYObjDgCkAiUhzALLxprGIWKhDoUKinpdi0cHxr2H0g=
+github.com/mattermost/mattermost/server/v8 v8.0.0-20261022074641-987e57120dca h1:Hom1b1ramgBBWr0tNbOiM5aSZzP0runK93GIOwbraN4=
+github.com/mattermost/mattermost/server/v8 v8.0.0-20261022074641-987e57120dca/go.mod h1:RpjKrmIQX6Ishd1xJFPlWzSJi/LNEE783ur5CLOTmgE=
 github.com/mattermost/xml-roundtrip-validator v0.1.0 h1:RXbVD2UAl7A7nOTR4u7E3ILa4IbtvKBHw64LDsmu9hU=
 github.com/mattermost/xml-roundtrip-validator v0.1.0/go.mod h1:qccnGMcpgwcNaBnxqpJpWWUiPNr5H3O8eDgGV9gT5To=
 github.com/mattn/go-colorable v0.1.9/go.mod h1:u6P/XSegPjTcexA+o6vUJrdnUu04hMope9wVRipJSqc=

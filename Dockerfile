@@ -1,8 +1,8 @@
-ARG MM_VERSION=11.11.1
+ARG MM_VERSION=12.0.1
 ARG MM_CLONE_URL=https://github.com/mattermost/mattermost.git
 
 # Build stage - compile Mattermost server with OIDC support
-FROM golang:1.26.7-alpine AS server-builder
+FROM golang:1.26.10-alpine AS server-builder
 
 RUN apk add --no-cache git gcc musl-dev
 
@@ -17,12 +17,12 @@ COPY . mattermost-oidc/
 
 RUN rm -rf /build/mattermost/server/enterprise \
     && cd /build/mattermost \
-    && git apply /build/mattermost-oidc/patches/mattermost-v11.11.1.patch \
+    && git apply /build/mattermost-oidc/patches/mattermost-v12.0.1.patch \
     && sed -i '/Enterprise Imports/d; /github.com\/mattermost\/mattermost\/server\/v8\/enterprise/d' \
     server/cmd/mattermost/main.go
 
 RUN cat > /build/go.work <<'GOWORK'
-go 1.26.7
+go 1.26.10
 
 use (
     ./mattermost/server
@@ -43,7 +43,7 @@ RUN go build -ldflags "-X github.com/mattermost/mattermost/server/public/model.B
 RUN OUTPUT_CONFIG=/build/mattermost/server/config/config.json go run ./scripts/config_generator
 
 # Runtime stage
-FROM alpine:3.18
+FROM alpine:3.24
 
 ENV PATH="/mattermost/bin:${PATH}" \
     MM_INSTALL_TYPE=docker
