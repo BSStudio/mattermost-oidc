@@ -29,6 +29,8 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost, maintained by Budav
 | v11.0.7    | [`mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)     | 1.24.6  |
 | v10.11.10  | [`mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch) | 1.24.6  |
 
+The v11.2.4 and older patches predate Mattermost's v11.6 `OAuthProvider` change, which the current module follows: build those versions from this repository at [`5fed1ce`](https://github.com/BSStudio/mattermost-oidc/tree/5fed1ce9d7fe0bf296b07c54ab6bf2b5c888c449), patch and module together.
+
 > **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
 ## Quick Start
