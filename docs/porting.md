@@ -58,7 +58,7 @@ On every version update, repoint the module and refresh its deps — don't leave
 
    **When that `go get` fails** with `server/v8@<commit> requires server/public@vX.Y.Z, not server/public@<commit>`, upstream's `server/go.mod` requires a `public` tag cut off-branch that sorts above the commit's pseudo-version (first hit at v11.11.1: requires `v0.4.4`, commit resolves to `v0.4.4-0.…`). Set the `replace` to the commit's pseudo-version *first*, then `go get` only `server/v8@<commit>`. The `public` require then reads the tag (`v0.4.4`) and the `replace` pins the commit — expected, not a mistake.
 3. **Tidy inside the go.work:** `go mod tidy` to refresh `go.sum` and realign the indirect block to the target's module graph.
-4. **Validate standalone** — this catches `go.sum` gaps the workspace build hides: `GOWORK=off GOPRIVATE='github.com/mattermost/*' go build ./... && go test ./...`.
+4. **Validate standalone** — this catches `go.sum` gaps the workspace build hides: `GOWORK=off GOPRIVATE='github.com/mattermost/*' go build ./... && GOWORK=off GOPRIVATE='github.com/mattermost/*' go test ./...`.
 
 ## Step 4 — build
 
