@@ -1,221 +1,50 @@
 # CLAUDE.md
 
-Guidance for working on this repo, with an emphasis on porting the integration
-to a new Mattermost version. The goal of this file is to encode the non-obvious
-things that have bitten previous ports so they don't have to be rediscovered.
-
-## What this repo is
-
 A generic OIDC SSO provider for Mattermost, delivered as:
 
 - A standalone Go module (`openid/`) implementing `einterfaces.OAuthProvider`.
-- A small patch (`patches/mattermost-vX.Y.Z.patch`) applied to an upstream
-  Mattermost checkout — there is **no fork**.
+- A small patch (`patches/mattermost-vX.Y.Z.patch`) applied to an upstream Mattermost checkout — there is **no fork**.
+
+[README.md](README.md) covers setup, configuration and account linking, [docs/deployment-guide.md](docs/deployment-guide.md) the local and Docker builds, and [docs/porting.md](docs/porting.md) porting to a new Mattermost version: follow it for every port.
 
 The patch makes exactly four logical changes:
 
-1. `server/cmd/mattermost/main.go` — blank-import the `openid` package so its
-   `init()` registers the provider.
+1. `server/cmd/mattermost/main.go` — blank-import the `openid` package so its `init()` registers the provider.
 2. `server/go.mod` — add the `require`/`replace` pointing at the local module.
-3. `server/config/client.go` — expose the OpenID frontend props
-   (`EnableSignUpWithOpenId`, button text/color) without a license check.
-4. `server/channels/app/user.go` — remove the email-user guard so existing
-   password accounts can link to OIDC on first login (account linking;
-   optional — see README).
+3. `server/config/client.go` — expose the OpenID frontend props (`EnableSignUpWithOpenId`, button text/color) without a license check.
+4. `server/channels/app/user.go` — remove the email-user guard so existing password accounts can link to OIDC on first login (account linking; optional — see README).
 
-Account linking itself is gated in `openid/openid.go` `linkDecision`: ordinary
-accounts link automatically, accounts holding any system role outside the benign
-permit-list (`benignSystemRoles`) link only while named in
-`MM_OIDC_LINK_PRIVILEGED_ACCOUNTS`, and bots never link. The gate is on roles
-because roles live on the user row and are never recomputed from claims, so a
-mis-linked admin account keeps `system_admin`. When a new Mattermost release
-adds a system role, it is privileged by default — decide deliberately before
-adding it to `benignSystemRoles`. Keep hunk 4 as long as password accounts still
-need migrating.
-
-`MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL` adds an `email_verified` requirement on
-top, off by default because authentik and Entra ID do not emit a meaningful
-value as shipped. It reads `oAuthUser.EmailVerified`, which holds the raw claim
-only because core sets `user.EmailVerified = true` *after* the `userByEmail`
-block that calls `IsSameUser` — re-check that ordering in
-`server/channels/app/user.go` on every version port, since a move above the
-block would make the flag always true and the check a no-op.
-
-## Porting to a new Mattermost version
-
-The `openid/` module code is almost always **interface-stable** — the
-`OAuthProvider` interface did not change v10.11 → v11.0, so a port is usually
-"regenerate the patch + bump the go.work," not "audit the module." Check
-`server/einterfaces/oauthproviders.go` in the target version; only touch
-`openid/` if that interface changed.
-
-**It did change at v11.6** ([mattermost/mattermost#30852](https://github.com/mattermost/mattermost/pull/30852)).
-`GetUserFromJSON` gained a fourth argument:
-`GetUserFromJSON(rctx request.CTX, data io.Reader, tokenUser *model.User, settings *model.SSOSettings)`.
-Core resolves the provider's `SSOSettings` (via `GetSSOSettings`) and passes them
-in, and `SSOSettings` gained `UsePreferredUsername *bool` (defaults to `false`).
-This is **not** a decorative argument — the built-in providers (gitlab, Entra)
-read `settings.UsePreferredUsername` to decide the username source, and so does
-`openid/claims.go` `ToUser`: flag on ⇒ `preferred_username` (split on `@`); flag
-off (default) ⇒ email local part. If you port to a pre-v11.6 line, the signature
-must drop that argument again and `ToUser` reverts to a single arg; the
-per-version patches and the module build are not interchangeable across this
-boundary. Always diff `oauthproviders.go` **and** the gitlab provider between the
-old and new tag before regenerating — interface drift here silently breaks the
-build, and behavioral drift (a new settings flag) silently changes account
-provisioning.
-
-### Step 1 — regenerate the patch (it WILL fail to apply cleanly)
-
-The four hunks are logically stable, but line context drifts every release.
-Past examples: `c request.CTX` was renamed to `rctx request.CTX`; upstream
-removed the `ledongthuc/pdf` replace block, shifting the `go.mod` hunk; v11.2
-added a `vmihailenco/msgpack` replace **after** the `tablewriter` replace our
-go.mod hunk anchored on, so the hunk's trailing context was no longer EOF —
-the fix is to append the OIDC `require`/`replace` at the true end of go.mod.
-
-Fast path against a sibling upstream checkout (`../mattermost` at the target tag):
+## Before calling something done
 
 ```bash
-# Does the old patch still apply? -3 shows which hunks conflict.
-cd ../mattermost && git apply -3 --check ../mattermost-oidc/patches/mattermost-v<OLD>.patch
+GOWORK=off GOPRIVATE='github.com/mattermost/*' go build ./...
+GOWORK=off GOPRIVATE='github.com/mattermost/*' go test ./...
+docker build -t mattermost-oidc .   # after a patch or Dockerfile change
 ```
 
-**Clone upstream with LF endings.** Mattermost ships no `.gitattributes`, so on
-Windows a global `core.autocrlf=true` checks it out CRLF and the LF patch fails
-on *every* hunk — including files the target tag never touched:
+The Go commands build and test the module on its own, against the pins in `go.mod`; only the Docker build compiles the patched Mattermost server. This repository has no CI, so nothing else checks a change.
 
-```bash
-git clone -c core.autocrlf=false --depth 1 --branch <NEW-tag> \
-  https://github.com/mattermost/mattermost.git ../mattermost
-```
+## Commits and branches
 
-A hunk failing on a file with a genuinely empty `git diff <OLD-tag> <NEW-tag>`
-is the tell that this, not real drift, is the problem.
+Commit messages and PR titles are plain imperative sentences. PRs are squash-merged: the PR title becomes the commit on `main`, with an empty body.
 
-If it conflicts, re-apply the four changes by hand against the new tag, then:
+## Rules
 
-```bash
-git diff server/channels/app/user.go server/cmd/mattermost/main.go \
-         server/config/client.go server/go.mod \
-  > ../mattermost-oidc/patches/mattermost-v<NEW>.patch
-# Verify it applies from a clean tree:
-git reset --hard <NEW-tag> && git apply --check ../mattermost-oidc/patches/mattermost-v<NEW>.patch
-```
+- This repository started as a fork of `toowoxx/mattermost-oidc` and has diverged from it: changes stay here, nothing is synced from or contributed back to the original.
+- The current target is whatever `patches/mattermost-v*.patch` is newest; README's Compatibility section should match.
+- Use **Entra ID** (not "Azure AD") and **Microsoft 365** (not "Office 365") in prose — current Microsoft branding.
+- Only claim compatibility with versions actually built and tested; note untested IdPs/paths as such rather than implying coverage.
 
-Keep the previous version's patch around — older ESR lines stay supported.
+### Account linking
 
-### Step 2 — go.work MUST include `server/public` (non-obvious, recurring)
+Account linking itself is gated in `openid/openid.go` `linkDecision`: ordinary accounts link automatically, accounts holding any system role outside the benign permit-list (`benignSystemRoles`) link only while named in `MM_OIDC_LINK_PRIVILEGED_ACCOUNTS`, and bots never link. The gate is on roles because roles live on the user row and are never recomputed from claims, so a mis-linked admin account keeps `system_admin`. When a new Mattermost release adds a system role, it is privileged by default — decide deliberately before adding it to `benignSystemRoles`. Keep hunk 4 as long as password accounts still need migrating.
 
-The build fails without it. The Mattermost server references in-tree
-`server/public` symbols that are newer than the tagged `server/public` release
-on the Go module proxy (the `v0.1.x` tag lags HEAD). Symptoms are
-`undefined: model.AccessControlPolicyVersionV0_2`, `model.SystemServerId`,
-`utils.Pager`, `license.Limits`, etc. — all real symbols, just not in the tag.
+`MM_OIDC_LINK_REQUIRE_VERIFIED_EMAIL` adds an `email_verified` requirement on top, off by default because authentik and Entra ID do not emit a meaningful value as shipped. It reads `oAuthUser.EmailVerified`, which holds the raw claim only because core sets `user.EmailVerified = true` *after* the `userByEmail` block that calls `IsSameUser` — re-check that ordering in `server/channels/app/user.go` on every version port, since a move above the block would make the flag always true and the check a no-op.
 
-Mattermost's own `Makefile setup-go-work` target does the same thing
-(`go work use ./public`). The go.work must be:
+### Gotchas worth not relearning
 
-```
-use (
-    ./mattermost/server
-    ./mattermost/server/public
-    ./mattermost-oidc
-)
-```
-
-### Step 3 — bump go.mod to mirror upstream, then tidy
-
-On every version update, repoint the module and refresh its deps — don't leave
-them lagging. Mirror upstream exactly; do **not** pick a newer or older Go than
-the target tag ships.
-
-1. **Go version: match upstream.** Set the `go` directive in this repo's
-   `go.mod`, in the `go.work`, and the Dockerfile base image to the exact `go`
-   directive in the target tag's `server/go.mod` (and `server/public/go.mod` —
-   they agree). Don't run ahead of upstream's Go.
-2. **Repoint both pins** to the target commit — `server/v8` (require) and
-   `server/public` (replace), same commit and same **UTC** pseudo-version
-   timestamp (see the timestamp gotcha below). Don't hand-write the version —
-   let Go derive it, because the `server/public` pseudo-version's *base* moves
-   as upstream cuts `server/public/vX.Y.Z` tags (it was `v0.4.1-0.…` at v11.8.1
-   and `v0.4.3-0.…` at v11.9.0):
-
-   ```bash
-   go mod edit -dropreplace github.com/mattermost/mattermost/server/public
-   GOFLAGS=-mod=mod GOWORK=off GOPRIVATE='github.com/mattermost/*' \
-     go get github.com/mattermost/mattermost/server/v8@<commit> \
-            github.com/mattermost/mattermost/server/public@<commit>
-   ```
-
-   Then re-add the `replace` with the pseudo-version `go get` resolved. The
-   `replace` is load-bearing, not decorative: a released `server/public` tag
-   sorts *above* a pseudo-version derived from it, so without it MVS can pull a
-   tagged `public` that doesn't match the pinned `server/v8` commit.
-
-   **When that `go get` fails** with `server/v8@<commit> requires
-   server/public@vX.Y.Z, not server/public@<commit>`, upstream's `server/go.mod`
-   requires a `public` tag cut off-branch that sorts above the commit's
-   pseudo-version (first hit at v11.11.1: requires `v0.4.4`, commit resolves to
-   `v0.4.4-0.…`). Set the `replace` to the commit's pseudo-version *first*, then
-   `go get` only `server/v8@<commit>`. The `public` require then reads the tag
-   (`v0.4.4`) and the `replace` pins the commit — expected, not a mistake.
-3. **Tidy inside the go.work:** `go mod tidy` to refresh `go.sum` and realign the
-   indirect block to the target's module graph.
-4. **Validate standalone** — this catches `go.sum` gaps the workspace build hides:
-   `GOWORK=off GOPRIVATE='github.com/mattermost/*' go build ./... && go test ./...`.
-
-### Step 4 — build
-
-`server/v8` is not on the module proxy, so set `GOPRIVATE=github.com/mattermost/*`.
-
-```bash
-cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build
-```
-
-Then build the Docker image (`docs/deployment-guide.md`, Option 2). Before that, move the runtime stage (`FROM alpine:`) to the Alpine release the `golang:*-alpine` build image is on: nothing else bumps it, since this repo deliberately has no Renovate, and the binary links musl dynamically, so a runtime older than the build stage can fail at start.
-
-```bash
-docker run --rm golang:<go-version>-alpine cat /etc/alpine-release
-```
-
-## Gotchas worth not relearning
-
-- **`go.mod`'s module pins only matter standalone.** The Docker/workspace build
-  resolves `server/v8` and `server/public` from the `go.work`/`replace`,
-  overriding the pins entirely — so a pin that lags HEAD won't break that build,
-  and you needn't chase it mid-development. It _does_ matter for standalone
-  `go test ./...` / `go build ./...` and downstream consumers, so repoint it and
-  `go mod tidy` as part of every version port (Step 3).
-- **Downstream builds pin this repo by commit, not a branch or tarball.** After
-  changing the patch here, push first; a consumer that clones at a pinned commit
-  only picks up the change once that pin is bumped.
-- **go.mod pseudo-version timestamps are UTC, not local.** The pin format is
-  `v8.0.0-<YYYYMMDDhhmmss>-<commit12>` where the timestamp is the commit's
-  **UTC** committer date. Deriving it with a local-TZ `git show --date=format:…`
-  produces a value Go rejects at build time (`does not match version-control
-  timestamp (expected …)`). Use `TZ=UTC git show -s --format=%cd
-  --date=format-local:%Y%m%d%H%M%S <commit>`. Both pins (server/v8 require and
-  the server/public replace) must use the same UTC timestamp + commit.
-- **Upstream no longer commits `config/config.json`** (gone by v11.8). It is
-  generated from `model.Config` defaults at release time via
-  `go run ./scripts/config_generator` (`OUTPUT_CONFIG=…/config.json`). The
-  Dockerfile generates it in the build stage; don't `COPY` a non-existent
-  `config/config.json`.
-- **`GetUserFromIdToken` intentionally returns `(nil, nil)`** to force the
-  authenticated UserInfo path — core passes the raw ID token unvalidated. Don't
-  "implement" it without JWKS/iss/aud verification.
-
-## Conventions
-
-- The current target is whatever `patches/mattermost-v*.patch` is newest;
-  README's Compatibility section should match.
-- Use **Entra ID** (not "Azure AD") and **Microsoft 365** (not "Office 365") in
-  prose — current Microsoft branding.
-- Only claim compatibility with versions actually built and tested; note
-  untested IdPs/paths as such rather than implying coverage.
-- **Keep commit messages short.** A subject line is usually the whole message.
-  Don't narrate what the diff already shows, and don't explain routine work
-  (version bumps, regenerated patches, doc edits). Add a body only for a
-  decision the diff can't convey — a non-obvious "why", or a constraint that
-  forced the approach — and keep it to a couple of lines.
+- **`go.mod`'s module pins only matter standalone.** The Docker/workspace build resolves `server/v8` and `server/public` from the `go.work`/`replace`, overriding the pins entirely — so a pin that lags HEAD won't break that build, and you needn't chase it mid-development. It _does_ matter for standalone `go test ./...` / `go build ./...` and downstream consumers, so repoint it and `go mod tidy` as part of every version port ([docs/porting.md](docs/porting.md), Step 3).
+- **Downstream builds pin this repo by commit, not a branch or tarball.** A consumer that clones at a pinned commit only picks up a change here once that pin is bumped.
+- **go.mod pseudo-version timestamps are UTC, not local.** The pin format is `v8.0.0-<YYYYMMDDhhmmss>-<commit12>` where the timestamp is the commit's **UTC** committer date. Deriving it with a local-TZ `git show --date=format:…` produces a value Go rejects at build time (`does not match version-control timestamp (expected …)`). Use `TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S <commit>`. Both pins (server/v8 require and the server/public replace) must use the same UTC timestamp + commit.
+- **Upstream no longer commits `config/config.json`** (gone by v11.8). It is generated from `model.Config` defaults at release time via `go run ./scripts/config_generator` (`OUTPUT_CONFIG=…/config.json`). The Dockerfile generates it in the build stage; don't `COPY` a non-existent `config/config.json`.
+- **`GetUserFromIdToken` intentionally returns `(nil, nil)`** to force the authenticated UserInfo path — core passes the raw ID token unvalidated. Don't "implement" it without JWKS/iss/aud verification.

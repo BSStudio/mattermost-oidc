@@ -21,7 +21,7 @@ index 5fb4b4a005..7c38d2aa5a 100644
  	_ "github.com/mattermost/mattermost/server/v8/channels/app/oauthproviders/gitlab"
  
 +	// OIDC SSO Provider
-+	_ "github.com/toowoxx/mattermost-oidc/openid"
++	_ "github.com/BSStudio/mattermost-oidc/openid"
 +
  	// Enterprise Imports
  	_ "github.com/mattermost/mattermost/server/v8/enterprise"
@@ -54,6 +54,6 @@ index fc0181e4ad..235fcf5e75 100644
  replace github.com/olekukonko/tablewriter => github.com/olekukonko/tablewriter v0.0.5
 +
 +// OIDC SSO Provider - local development
-+require github.com/toowoxx/mattermost-oidc v0.0.0
++require github.com/BSStudio/mattermost-oidc v0.0.0
 +
-+replace github.com/toowoxx/mattermost-oidc => ../../mattermost-oidc
++replace github.com/BSStudio/mattermost-oidc => ../../mattermost-oidc

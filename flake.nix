@@ -70,7 +70,7 @@
 
           meta = with pkgs.lib; {
             description = "Generic OIDC SSO provider for Mattermost";
-            homepage = "https://github.com/toowoxx/mattermost-oidc";
+            homepage = "https://github.com/BSStudio/mattermost-oidc";
             license = licenses.agpl3Only;
             maintainers = [ ];
           };

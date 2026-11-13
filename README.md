@@ -6,7 +6,7 @@
 
 # OIDC SSO Provider for Mattermost
 
-A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant IdP should work; we have only verified it against Entra ID.
+A generic OpenID Connect (OIDC) SSO provider for Mattermost, maintained by Budavári Schönherz Stúdió. It started as a fork of [toowoxx/mattermost-oidc](https://github.com/toowoxx/mattermost-oidc) by Toowoxx IT GmbH, who wrote the provider and the original patch. Any OIDC-compliant IdP should work; we run it against authentik, and the original project verified it against Entra ID.
 
 ## Features
 
@@ -29,6 +29,8 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 | v11.0.7    | [`mattermost-v11.0.7.patch`](patches/mattermost-v11.0.7.patch)     | 1.24.6  |
 | v10.11.10  | [`mattermost-v10.11.10.patch`](patches/mattermost-v10.11.10.patch) | 1.24.6  |
 
+The v11.2.4 and older patches predate Mattermost's v11.6 `OAuthProvider` change, which the current module follows: build those versions from this repository at [`5fed1ce`](https://github.com/BSStudio/mattermost-oidc/tree/5fed1ce9d7fe0bf296b07c54ab6bf2b5c888c449), patch and module together.
+
 > **Why this exists**: Mattermost Team Edition (the libre/AGPL build) ships SAML, Google, and Microsoft 365 SSO behind an enterprise license — only GitLab SSO is enabled there. Many self-hosted deployments worked around this by pointing Mattermost's GitLab SSO at a GitLab instance that itself federated to the real IdP. In v11.0, GitLab SSO has also been moved out of Team Edition, so even that workaround is gone. This module restores OIDC directly in Team Edition, letting Mattermost talk to any OIDC IdP without a license or a GitLab intermediary.
 
 ## Quick Start
@@ -36,7 +38,7 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 ### 1. Clone this repository
 
 ```bash
-git clone https://github.com/toowoxx/mattermost-oidc.git
+git clone https://github.com/BSStudio/mattermost-oidc.git
 ```
 
 ### 2. Development with Nix (recommended)
@@ -85,7 +87,7 @@ use (
 EOF
 ```
 
-**Note:** `server/public` must be in the `use` list — the Mattermost server references in-tree `server/public` symbols that are newer than the tagged release on the module proxy, so omitting it breaks the build. This mirrors Mattermost's own `make setup-go-work`.
+**Note:** `server/public` must be in the `use` list — the Mattermost server references in-tree `server/public` symbols that are newer than the tagged release on the module proxy, so omitting it breaks the build with errors such as `undefined: model.AccessControlPolicyVersionV0_2`, `model.SystemServerId`, `utils.Pager` or `license.Limits` — all real symbols, just not in the tag. This mirrors Mattermost's own `make setup-go-work` (`go work use ./public`).
 
 **Note:** Mattermost doesn't publish `server/v8` to the Go module proxy. Set `GOPRIVATE=github.com/mattermost/*` when building.
 
@@ -163,14 +165,14 @@ One setting lives outside `OpenIdSettings`, in the server's process environment:
 
 ## Identity Provider Setup
 
-Entra ID is what we use:
+We run it against authentik. The original project's setup for Entra ID:
 
 1. Register a new application in Entra ID.
 2. Set the redirect URI to `https://your-mattermost.com/signup/openid/complete`.
 3. Create a client secret.
 4. Discovery endpoint: `https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`.
 
-Other OIDC-compliant IdPs should work the same way — point at their discovery endpoint and supply client ID/secret. We just haven't run them.
+Other OIDC-compliant IdPs should work the same way — point at their discovery endpoint and supply client ID/secret. Neither we nor the original project have run them.
 
 ## Account Linking
 

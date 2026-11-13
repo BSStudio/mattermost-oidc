@@ -11,7 +11,7 @@ Build Mattermost locally with the OIDC module. There is no Mattermost fork — t
 git clone --depth 1 --branch v12.0.1 https://github.com/mattermost/mattermost.git
 
 # Clone the OIDC module as a sibling (not inside)
-git clone https://github.com/toowoxx/mattermost-oidc.git
+git clone https://github.com/BSStudio/mattermost-oidc.git
 
 # Apply the OIDC patch (go.mod require/replace, main.go import,
 # user.go email-migration change, and client.go license-gate bypass)
@@ -23,10 +23,7 @@ rm -rf server/enterprise
 sed -i '/Enterprise Imports/d; /github.com\/mattermost\/mattermost\/server\/v8\/enterprise/d' \
     server/cmd/mattermost/main.go
 
-# Set up a go.work at the common parent so the server resolves
-# mattermost-oidc locally (Mattermost doesn't publish server/v8 via the proxy).
-# server/public must be included too: the server references in-tree public
-# symbols newer than the tagged release, so omitting it breaks the build.
+# Set up a go.work at the common parent so the server resolves mattermost-oidc locally
 cd ..
 cat > go.work <<'EOF'
 go 1.26.10
@@ -44,6 +41,8 @@ GOPRIVATE='github.com/mattermost/*' make build-linux-amd64
 
 # The binary is at ./bin/mattermost
 ```
+
+The README's [Quick Start](../README.md#3-apply-the-patch-to-upstream-mattermost) explains why the `go.work` needs `server/public` and the build needs `GOPRIVATE`.
 
 ## Option 2: Docker Build
 
