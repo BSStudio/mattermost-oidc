@@ -38,17 +38,7 @@ Keep the previous version's patch around — older ESR lines stay supported.
 
 ## Step 2 — go.work MUST include `server/public` (non-obvious, recurring)
 
-The build fails without it. The Mattermost server references in-tree `server/public` symbols that are newer than the tagged `server/public` release on the Go module proxy (the `v0.1.x` tag lags HEAD). Symptoms are `undefined: model.AccessControlPolicyVersionV0_2`, `model.SystemServerId`, `utils.Pager`, `license.Limits`, etc. — all real symbols, just not in the tag.
-
-Mattermost's own `Makefile setup-go-work` target does the same thing (`go work use ./public`). The go.work must be:
-
-```
-use (
-    ./mattermost/server
-    ./mattermost/server/public
-    ./mattermost-oidc
-)
-```
+Use the `go.work` from the README's [Quick Start](../README.md#3-apply-the-patch-to-upstream-mattermost); its note explains why `server/public` must be in it and what the build errors look like without it.
 
 ## Step 3 — bump go.mod to mirror upstream, then tidy
 
@@ -72,7 +62,7 @@ On every version update, repoint the module and refresh its deps — don't leave
 
 ## Step 4 — build
 
-`server/v8` is not on the module proxy, so set `GOPRIVATE=github.com/mattermost/*`.
+Build with `GOPRIVATE` set (see the README's [Quick Start](../README.md#3-apply-the-patch-to-upstream-mattermost)):
 
 ```bash
 cd ../mattermost/server && GOPRIVATE='github.com/mattermost/*' make build

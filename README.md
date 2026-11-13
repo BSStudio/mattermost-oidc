@@ -85,7 +85,7 @@ use (
 EOF
 ```
 
-**Note:** `server/public` must be in the `use` list — the Mattermost server references in-tree `server/public` symbols that are newer than the tagged release on the module proxy, so omitting it breaks the build. This mirrors Mattermost's own `make setup-go-work`.
+**Note:** `server/public` must be in the `use` list — the Mattermost server references in-tree `server/public` symbols that are newer than the tagged release on the module proxy, so omitting it breaks the build with errors such as `undefined: model.AccessControlPolicyVersionV0_2`, `model.SystemServerId`, `utils.Pager` or `license.Limits` — all real symbols, just not in the tag. This mirrors Mattermost's own `make setup-go-work` (`go work use ./public`).
 
 **Note:** Mattermost doesn't publish `server/v8` to the Go module proxy. Set `GOPRIVATE=github.com/mattermost/*` when building.
 
