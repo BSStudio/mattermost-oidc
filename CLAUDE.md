@@ -30,6 +30,7 @@ Commit messages and PR titles are plain imperative sentences. PRs are squash-mer
 
 ## Rules
 
+- This repository started as a fork of `toowoxx/mattermost-oidc` and has diverged from it: changes stay here, nothing is synced from or contributed back to the original.
 - The current target is whatever `patches/mattermost-v*.patch` is newest; README's Compatibility section should match.
 - Use **Entra ID** (not "Azure AD") and **Microsoft 365** (not "Office 365") in prose — current Microsoft branding.
 - Only claim compatibility with versions actually built and tested; note untested IdPs/paths as such rather than implying coverage.

@@ -11,7 +11,7 @@ Build Mattermost locally with the OIDC module. There is no Mattermost fork — t
 git clone --depth 1 --branch v12.0.1 https://github.com/mattermost/mattermost.git
 
 # Clone the OIDC module as a sibling (not inside)
-git clone https://github.com/toowoxx/mattermost-oidc.git
+git clone https://github.com/BSStudio/mattermost-oidc.git
 
 # Apply the OIDC patch (go.mod require/replace, main.go import,
 # user.go email-migration change, and client.go license-gate bypass)

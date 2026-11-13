@@ -6,7 +6,7 @@
 
 # OIDC SSO Provider for Mattermost
 
-A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant IdP should work; we have only verified it against Entra ID.
+A generic OpenID Connect (OIDC) SSO provider for Mattermost, maintained by Budavári Schönherz Stúdió. It started as a fork of [toowoxx/mattermost-oidc](https://github.com/toowoxx/mattermost-oidc) by Toowoxx IT GmbH, who wrote the provider and the original patch. Any OIDC-compliant IdP should work; we run it against authentik, and the original project verified it against Entra ID.
 
 ## Features
 
@@ -36,7 +36,7 @@ A generic OpenID Connect (OIDC) SSO provider for Mattermost. Any OIDC-compliant 
 ### 1. Clone this repository
 
 ```bash
-git clone https://github.com/toowoxx/mattermost-oidc.git
+git clone https://github.com/BSStudio/mattermost-oidc.git
 ```
 
 ### 2. Development with Nix (recommended)
@@ -163,14 +163,14 @@ One setting lives outside `OpenIdSettings`, in the server's process environment:
 
 ## Identity Provider Setup
 
-Entra ID is what we use:
+We run it against authentik. The original project's setup for Entra ID:
 
 1. Register a new application in Entra ID.
 2. Set the redirect URI to `https://your-mattermost.com/signup/openid/complete`.
 3. Create a client secret.
 4. Discovery endpoint: `https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`.
 
-Other OIDC-compliant IdPs should work the same way — point at their discovery endpoint and supply client ID/secret. We just haven't run them.
+Other OIDC-compliant IdPs should work the same way — point at their discovery endpoint and supply client ID/secret. Neither we nor the original project have run them.
 
 ## Account Linking
 
