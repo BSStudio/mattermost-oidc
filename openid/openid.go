@@ -7,7 +7,7 @@
 //
 // To use this provider, add a blank import in your main.go:
 //
-//	import _ "github.com/toowoxx/mattermost-oidc/openid"
+//	import _ "github.com/BSStudio/mattermost-oidc/openid"
 //
 // Then configure the OpenIdSettings in your Mattermost config.
 package openid

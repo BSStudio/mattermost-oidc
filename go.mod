@@ -1,4 +1,4 @@
-module github.com/toowoxx/mattermost-oidc
+module github.com/BSStudio/mattermost-oidc
 
 go 1.26.10
 

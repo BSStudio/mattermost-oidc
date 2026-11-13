@@ -21,7 +21,7 @@ index 5fb4b4a0..7c38d2aa 100644
  	_ "github.com/mattermost/mattermost/server/v8/channels/app/oauthproviders/gitlab"
  
 +	// OIDC SSO Provider
-+	_ "github.com/toowoxx/mattermost-oidc/openid"
++	_ "github.com/BSStudio/mattermost-oidc/openid"
 +
  	// Enterprise Imports
  	_ "github.com/mattermost/mattermost/server/v8/enterprise"
@@ -54,6 +54,6 @@ index 308588e3..584f0481 100644
  replace github.com/vmihailenco/msgpack/v5 => github.com/mattermost/msgpack/v5 v5.0.0-20260813205620-e158e8d3647e
 +
 +// OIDC SSO Provider - local development
-+require github.com/toowoxx/mattermost-oidc v0.0.0
++require github.com/BSStudio/mattermost-oidc v0.0.0
 +
-+replace github.com/toowoxx/mattermost-oidc => ../../mattermost-oidc
++replace github.com/BSStudio/mattermost-oidc => ../../mattermost-oidc
