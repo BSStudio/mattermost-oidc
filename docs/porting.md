@@ -73,3 +73,12 @@ Then build the Docker image (`docs/deployment-guide.md`, Option 2). Before that,
 ```bash
 docker run --rm golang:<go-version>-alpine cat /etc/alpine-release
 ```
+
+## Step 5 — move the copies of the versions
+
+The new Mattermost and Go versions also appear in:
+
+- `Dockerfile`: the `MM_VERSION` default and the `go` line of the `go.work` heredoc.
+- README: a new row at the top of [Compatibility](../README.md#compatibility), and the clone tag, patch name and `go.work` in [Quick Start](../README.md#3-apply-the-patch-to-upstream-mattermost).
+- [deployment-guide.md](deployment-guide.md): the same three in Option 1, and the `MM_VERSION` example in Option 2.
+- `flake.nix`: the `go.work` tip; on a new Go minor version also the `go_1_XX` package and README's `nix develop` comment.
