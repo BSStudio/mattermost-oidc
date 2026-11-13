@@ -17,7 +17,7 @@ COPY . mattermost-oidc/
 
 RUN rm -rf /build/mattermost/server/enterprise \
     && cd /build/mattermost \
-    && git apply /build/mattermost-oidc/patches/mattermost-v12.0.1.patch \
+    && git apply /build/mattermost-oidc/patches/mattermost-v${MM_VERSION}.patch \
     && sed -i '/Enterprise Imports/d; /github.com\/mattermost\/mattermost\/server\/v8\/enterprise/d' \
     server/cmd/mattermost/main.go
 
